@@ -1,41 +1,45 @@
-# Agentic development template
+# OATS — OpenCode Agent Token Stats
 
-This template is designed to help you create an agentic development
-environment for your projects. It is based on the dark-factory model, which
-emphasizes the use of autonomous agents to manage and execute tasks in a
-development workflow.
+OATS is a planned OpenCode v2 plugin for understanding token usage and
+estimated costs across agents, subagents, and models.
 
-## How to Use This Template
+**Status: project definition only.** The plugin is not implemented. This
+repository currently contains development guidance and repository
+infrastructure specifications, not an installable plugin.
 
-1. Work with your agent to define the project vision: [Vision.md](Vision.md).
-   This document should describe the overall, high-level vision for the
-   project, including what is being built, who it is being built for, and why
-   it is being built.
-2. Work with your agent to define the system architecture:
-   [Architecture.md](Architecture.md). This document should describe the
-   overall system architecture, including the components, interfaces, and data
-   flows.
-3. Work with your agent to iteratively define the requirements for what the
-   system should do, and how it should behave. These requirements will be
-   expressed in EARS (Easy Approach to Requirements Syntax) and will drive the
-   creation of Gherkin feature files and step definitions. The team of agents
-   will then implement the system to satisfy these requirements, and verify
-   that the implementation meets the requirements.
+## Planned experience
 
-## Initial set of requirements
+- A compact sidebar overview of token usage and estimated costs.
+- An expanded view with token and estimated-cost breakdowns per agent and
+  subagent, and per model.
 
-This template includes an initial set of requirements for setting up CI,
-linting, Renovate dependency management, and Mergify merge queue automation in
-`features/repo-infrastructure/`. While the EARS requirements should be able to be
-used and refined as desired, you may want to have your agent re-write the step
-files into whatever language is chosen for the project as a whole.
+Usage reporting and cost estimates will depend on the data available from
+OpenCode and model providers. Estimates are informational, not billing
+guarantees, and may differ from provider invoices.
 
-### Running the Verification Suite
+## Specification-driven development
 
-To verify the repository infrastructure specifications without installing local
-virtual environments or project manifests:
+The project uses an agent-assisted, specification-driven workflow:
+
+1. Define the goals and audience in [Vision.md](Vision.md).
+2. Describe components and interfaces in [Architecture.md](Architecture.md).
+3. Refine requirements into EARS (Easy Approach to Requirements Syntax) rules
+   and Gherkin specifications in [features/](features/), with executable step
+   definitions.
+4. Implement behavior against those specifications, then verify and audit it.
+
+These documents guide future implementation; this README describes the
+planned direction, not completed plugin behavior. Feature specifications
+follow the conventions in [features/AGENTS.md](features/AGENTS.md).
+
+## Repository infrastructure
+
+Existing specifications in [features/repo-infrastructure/](features/repo-infrastructure/)
+cover CI, linting, Renovate dependency management, and Mergify merge queue
+automation.
+
+Run the repository infrastructure verification suite with:
 
 ```bash
 uvx --with pyyaml --with json5 behave
 ```
-
