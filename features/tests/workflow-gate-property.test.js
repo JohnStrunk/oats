@@ -111,6 +111,8 @@ test('the Gherkin outline runs the generated property after its fixed-case gate'
   }
   for (const path of [
     'features/steps/workflow_helper.js',
+    'features/steps/ci_scheduling.js',
+    'features/steps/ci_linter.js',
     'features/steps/workflow_gate_property.js',
     'features/steps/given/n-test-jobs-have-completed-with-conclusion-success.js',
     'features/steps/given/n-lint-jobs-have-completed-with-conclusion-success.js',
