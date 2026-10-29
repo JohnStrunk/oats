@@ -24,3 +24,9 @@ Feature: When a pull request targeting main, a push to main, or a workflow dispa
     When the CI workflow event dispatcher evaluates the dispatch event
     Then the CI workflow shall schedule all configured automated test jobs
     And the CI workflow shall schedule all configured lint check jobs
+
+  Scenario: CI workflow triggers on a pull request update targeting main
+    Given a pull request targeting "main" receives new commits
+    When the CI workflow event dispatcher evaluates the pull request event
+    Then the CI workflow shall schedule all configured automated test jobs
+    And the CI workflow shall schedule all configured lint check jobs
