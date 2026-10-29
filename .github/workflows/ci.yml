@@ -1,0 +1,77 @@
+name: CI
+
+"on":
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Automated Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run automated test suite
+        run: |
+          echo "Running automated test suite (placeholder - to be defined by project)..."
+          exit 0
+
+  lint-markdown:
+    name: Lint Markdown Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        with:
+          globs: "**/*.md"
+
+  lint-yaml-and-workflows:
+    name: Lint YAML Configurations and Workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+
+      - name: Run yamllint
+        run: |
+          pipx run yamllint .
+
+
+  lint-shell:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+
+  successful-ci:
+    name: Successful CI
+    needs:
+      - test
+      - lint-markdown
+      - lint-yaml-and-workflows
+      - lint-shell
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Evaluate aggregate prerequisite conclusions
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
+            echo "CI verification failed: one or more prerequisite jobs failed, were cancelled, or were skipped."
+            exit 1
+          fi
+          echo "CI verification passed: all prerequisite test and lint check jobs succeeded."
+          exit 0

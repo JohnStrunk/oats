@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "eliciting-requirements": {
+      "source": "redhat-et/ProtoBot",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/eliciting-requirements/SKILL.md",
+      "computedHash": "6b4a3ba1a1e6690c21ced8f5098a4b00b307ef96bc119e2a905016b3359e67d3"
+    }
+  }
+}
