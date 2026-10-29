@@ -87,10 +87,13 @@ export function cleanupSandbox(dir) {
   if (dir && existsSync(dir)) rmSync(dir, { recursive: true, force: true })
 }
 
-// Copy the actual specs and support files for discovery; never run discovery
-// from the real checkout. The copy has no application source or host binary.
+// Discovery imports the actual support graph, including static imports of
+// application modules. Copy both trees so those imports resolve inside the
+// disposable checkout; the host binary remains blocked and the BeforeAll
+// guard still refuses any scenario execution in a discovery child.
 export async function populateDiscoverySandbox(dir, root) {
   await populateSandbox(dir, root)
   rmSync(join(dir, 'features'), { recursive: true, force: true })
   cpSync(join(root, 'features'), join(dir, 'features'), { recursive: true })
+  cpSync(join(root, 'src'), join(dir, 'src'), { recursive: true })
 }

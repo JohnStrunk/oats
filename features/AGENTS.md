@@ -131,12 +131,15 @@ features/
   is loaded transitively through their imports. Keep unit-test files out of
   Cucumber's support-code import graph.
 - Harness unit tests currently use Node.js's built-in test runner and run
-  without launching the real OpenCode host. The tagged smoke scenarios exercise
-  that boundary.
+  without launching the real OpenCode host. The tagged smoke scenarios and the
+  separate real-host contract tests exercise that boundary.
 - From the repository root, run `npm run test:unit` for unit tests,
   `npm run test:features` for all acceptance scenarios, or `npm test` for both.
   Filter acceptance scenarios with a Cucumber tag expression, for example
   `npm run test:features -- --tags '@component:plugin-ui'`.
+- Run `npm run test:real-host` with `OATS_OPENCODE` set to the absolute path of
+  the pinned host for the session-data contract. This explicit command fails
+  if prerequisites are unavailable or a required test is skipped.
 - Follow [README.md](../README.md) for real-host smoke-test prerequisites and
   isolation constraints. A test-framework migration must preserve observable
   assertions and negative controls, not replace them with mock-only checks.

@@ -32,3 +32,8 @@ Feature: When a contributor selects a component tag for a feature-suite run, the
     When the contributor runs the isolated feature suite for the plugin UI component
     Then the runner shall execute only the plugin UI sandbox scenario
     And the test command shall return a zero exit status
+
+  Scenario: Select the session data access scenarios
+    Given the repository contains the existing acceptance scenarios
+    When the contributor requests a dry run for the session data access component
+    Then the runner shall select all existing session data access scenarios and no other component's scenarios

@@ -4,17 +4,18 @@ OATS is a minimal OpenCode v2 TUI plugin, intended to help explain token usage
 and estimated costs across agents, subagents, and models.
 
 **Current behavior:** a brief **OATS loaded** startup toast confirms that the
-plugin loaded. Token statistics, cost estimates, and reporting views are not
-implemented yet.
+plugin loaded. Session data access supplies available historical and live
+individual records for the displayed session and its descendants. Aggregated token
+statistics, derived cost estimates, and reporting views remain planned.
 
 ## Try the local plugin
 
 Prerequisites:
 
-- OpenCode v2. The host version used for development and testing is **v2.0.32**;
+- OpenCode **v2.0.32**, the pinned host version;
   compatibility with other releases is not established.
-- Node.js and npm for checkout development and verification. Local verification
-  has used Node.js **22.23.4** (the version in `.nvmrc`); CI uses **26**. For
+- Node.js and npm for checkout development and verification. The checkout pins
+  Node.js **24.22.0** in `.nvmrc`; CI uses **26**. For
   Node.js 22, the locked dependency tree requires **22.19.0 or later**, including
   a production transitive dependency of `@opencode/plugin@2.0.32`; it is not
   solely a test dependency requirement. The Cucumber.js test runner declares
@@ -61,6 +62,34 @@ There is no project-local `cli.json`. See the official V2
 [CLI plugin configuration](https://opencode.ai/v2/docs/cli/plugins) and
 [TUI plugin API](https://opencode.ai/v2/docs/build/plugins/cli).
 
+## Session data access
+
+Session data access retains each record's recorded agent and model identities,
+reported usage, and OpenCode-reported cost rather than attributing historical
+work to current selections. Unknown usage or cost remains distinct from a
+reported zero; reported cost is not proof of the provider's actual charge.
+
+The dataset follows the displayed session subtree, is empty when no session is
+displayed, and incorporates live record updates without duplicates. Missing
+identity or usage is exposed as a gap, not replaced with an invented value or
+record. Copied fork records are excluded, and uncertain provenance is flagged
+rather than assumed to be new work. Without provenance distinguishing copies
+from new execution, all historical records for a known fork may be withheld,
+including possible post-fork work. Independently attributable descendants and
+live-witnessed work may still be available, but do not make that history
+complete.
+
+Failed or unavailable session metadata withholds unproven history until lookup
+recovery allows attribution; it is not treated as proof that a session is not
+a fork. Partial loading failures preserve attributable records and indicate
+incompleteness; refresh retries unavailable data where the host can supply it.
+
+OpenCode v2.0.32 typically does not persist historical events. Some event-only
+usage and retry attempts may be unreconstructible once those events are lost,
+so available records are not a guarantee of complete history. Refresh cannot
+recover data the host no longer has. This is a data-access capability only;
+aggregation, pricing calculations, and statistics UI remain planned.
+
 ## Planned experience
 
 - A compact sidebar overview of token usage and estimated costs.
@@ -84,7 +113,7 @@ The project uses an agent-assisted, specification-driven workflow:
 
 Feature specifications follow the conventions in
 [features/AGENTS.md](features/AGENTS.md). The reporting experience above remains
-planned; the startup toast is the current bootstrap behavior.
+planned; the startup toast remains the current visible bootstrap behavior.
 
 ## Development and verification
 
@@ -105,14 +134,41 @@ builds it from source, Linux requires Python, `make`, and a C/C++ build toolchai
 macOS requires Python and the Xcode command-line build tools. Python may also
 be used by unrelated repository tooling; it is not the acceptance-test runner.
 
-Run the unit tests, including smoke-harness, migration, workflow scheduling,
-workflow-gate, and real-linter boundary tests, without launching OpenCode.
-First complete the [CI verification setup](#local-ci-verification) below; the
-unit suite requires the lint tools as well as Bash on `PATH`:
+Run the unit suite, including smoke-harness, migration, workflow scheduling,
+workflow-gate, real-linter boundary, and session-data tests, without launching
+OpenCode. First complete the [CI verification setup](#local-ci-verification)
+below; the unit suite requires the lint tools as well as Bash on `PATH`:
 
 ```bash
 npm run test:unit
 ```
+
+The unit suite does not launch a real OpenCode host. The separate
+[`session-data-access.real-host.test.js`](features/real-host-tests/session-data-access.real-host.test.js)
+launches a real OpenCode **v2.0.32** server. It checks the
+HTTP/SDK contract and session data access using imported synthetic sessions
+and messages, without model calls. Live settlement and event deduplication
+remain covered by fake-host tests, not this real-host contract test.
+
+Run this contract separately with the absolute path to the pinned host:
+
+```bash
+npm ci --prefix .github/tooling/opencode-host
+OATS_OPENCODE="$PWD/.github/tooling/opencode-host/node_modules/.bin/opencode" \
+  npm run test:real-host
+```
+
+The command fails rather than skips on Windows, an absent or wrong-version
+host, or system configuration that exists or cannot be inspected. It never
+falls back to another host. CI installs the pinned host and runs this command
+separately from the unit and feature suites. `npm test` does not include it.
+
+The server runs on loopback with temporary home, XDG, and project directories
+and a minimal child environment. Project configuration discovery, automatic
+updates, and model metadata fetching are disabled using the same controls
+described for the TUI smoke harness below. These controls do not guarantee
+network isolation or offline operation. The contract test does not launch a
+TUI or require a pseudo-terminal.
 
 Run the real-host TUI smoke scenarios:
 
