@@ -62,6 +62,86 @@ test('removing any failure, cancellation or skip check changes the outcome', () 
   }
 })
 
+test('shell, environment and container overrides cannot change how the gate runs', () => {
+  const overrides = [
+    workflow => { workflow.defaults = { run: { shell: 'bash' } } },
+    workflow => { workflow.env = { BASH_ENV: '/tmp/injected.sh' } },
+    workflow => { workflow.env = {} },
+    workflow => { findSuccessfulCiJob(workflow)[1].defaults = { run: { shell: 'bash' } } },
+    workflow => { findSuccessfulCiJob(workflow)[1].env = { BASH_ENV: '/tmp/injected.sh' } },
+    workflow => { findSuccessfulCiJob(workflow)[1]['continue-on-error'] = false },
+    workflow => { findSuccessfulCiJob(workflow)[1].container = { image: 'node:24' } },
+    workflow => { workflow.container = 'node:24' },
+  ]
+  for (const mutate of overrides) {
+    const workflow = structuredClone(loadCiWorkflow())
+    mutate(workflow)
+    assert.throws(() => executeSuccessfulCiGate(workflow, {}), /execution settings|container/)
+  }
+})
+
+test('a step-level working-directory is rejected instead of silently ignored', () => {
+  const workflow = structuredClone(loadCiWorkflow())
+  const [, job] = findSuccessfulCiJob(workflow)
+  job.steps[0].run = 'exit 0\n'
+  job.steps[0]['working-directory'] = 'features'
+  assert.throws(() => executeSuccessfulCiGate(workflow, {}), /Unsupported Successful CI gate step setting: working-directory/)
+  delete job.steps[0]['working-directory']
+  assert.equal(executeSuccessfulCiGate(workflow, {}), 'success')
+})
+
+test('gate runs in an empty workspace without repository files', () => {
+  const workflow = structuredClone(loadCiWorkflow())
+  const [, job] = findSuccessfulCiJob(workflow)
+  job.steps[0].run = 'test -f package.json\nexit 0\n'
+  // A gate that requires a checked-in file must fail: the Successful CI job
+  // has no checkout, so running it from the repository would falsely pass.
+  assert.equal(executeSuccessfulCiGate(workflow, {}), 'failure')
+  assert.equal(executeSuccessfulCiGate(loadCiWorkflow(), {}), 'success')
+})
+
+test('additional gate steps that could populate the workspace fail closed', () => {
+  const workflow = structuredClone(loadCiWorkflow())
+  const [, job] = findSuccessfulCiJob(workflow)
+  job.steps.unshift({ name: 'Check out repository', uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' })
+  assert.equal(job.steps.length, 2)
+  assert.throws(() => executeSuccessfulCiGate(workflow, {}), /Expected one Successful CI gate step/)
+})
+
+test('other step-level execution overrides fail closed', () => {
+  for (const [key, value] of [
+    ['shell', 'bash'],
+    ['env', { BASH_ENV: '/tmp/injected.sh' }],
+    ['if', 'always()'],
+    ['continue-on-error', false],
+    ['uses', './.github/actions/gate'],
+  ]) {
+    const workflow = structuredClone(loadCiWorkflow())
+    findSuccessfulCiJob(workflow)[1].steps[0][key] = value
+    assert.throws(() => executeSuccessfulCiGate(workflow, {}), /Unsupported Successful CI gate step setting/, key)
+  }
+})
+
+test('runners that would not use implicit Linux bash are rejected', () => {
+  for (const runsOn of ['windows-latest', 'macos-15', 'self-hosted', '${{ matrix.os }}', ['ubuntu-latest'], '', 42]) {
+    const workflow = structuredClone(loadCiWorkflow())
+    const [, job] = findSuccessfulCiJob(workflow)
+    job['runs-on'] = runsOn
+    assert.throws(() => executeSuccessfulCiGate(workflow, {}), /Ubuntu runner/, JSON.stringify(runsOn))
+  }
+  const workflow = structuredClone(loadCiWorkflow())
+  delete findSuccessfulCiJob(workflow)[1]['runs-on']
+  assert.throws(() => executeSuccessfulCiGate(workflow, {}), /Ubuntu runner/)
+})
+
+test('other plain Ubuntu runners still execute the gate', () => {
+  for (const runsOn of ['ubuntu-22.04', 'ubuntu-24.04', 'ubuntu-24.04-arm']) {
+    const workflow = structuredClone(loadCiWorkflow())
+    findSuccessfulCiJob(workflow)[1]['runs-on'] = runsOn
+    assert.equal(executeSuccessfulCiGate(workflow, {}), 'success', runsOn)
+  }
+})
+
 test('implicit Linux bash does not enable pipefail', () => {
   const workflow = structuredClone(loadCiWorkflow())
   const [, job] = findSuccessfulCiJob(workflow)
@@ -88,11 +168,11 @@ test('unsupported expressions, context values and scheduling fail closed', () =>
   assert.throws(() => executeSuccessfulCiGate(workflow, { test: 'failure' }), /if: always/)
 })
 
-test('the gate must depend on every configured test and lint job', () => {
+test('the gate must depend on every non-gate job', () => {
   const workflow = loadCiWorkflow()
   const [, job] = findSuccessfulCiJob(workflow)
   job.needs = job.needs.filter(id => id !== 'lint-markdown')
-  assert.throws(() => executeSuccessfulCiGate(workflow, { test: 'success' }), /all configured test and lint jobs/)
+  assert.throws(() => executeSuccessfulCiGate(workflow, { test: 'success' }), /must be a Successful CI prerequisite: lint-markdown/)
 })
 
 test('outline fixtures have exactly the generated needs and run the original gate', () => {

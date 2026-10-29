@@ -22,7 +22,11 @@
     "@cucumber/cucumber": "13.3.0",
     "fast-check": "4.10.2",
     "json5": "2.2.3",
+    "markdownlint-cli2": "0.24.0",
     "node-pty": "1.1.0",
     "yaml": "2.9.1"
+  },
+  "overrides": {
+    "re2js": "2.9.1"
   }
 }

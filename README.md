@@ -105,9 +105,10 @@ builds it from source, Linux requires Python, `make`, and a C/C++ build toolchai
 macOS requires Python and the Xcode command-line build tools. Python may also
 be used by unrelated repository tooling; it is not the acceptance-test runner.
 
-Run the unit tests, including smoke-harness, migration, and workflow-gate tests,
-without launching OpenCode. These tests require Bash on `PATH` for the gate
-checks:
+Run the unit tests, including smoke-harness, migration, workflow scheduling,
+workflow-gate, and real-linter boundary tests, without launching OpenCode.
+First complete the [CI verification setup](#local-ci-verification) below; the
+unit suite requires the lint tools as well as Bash on `PATH`:
 
 ```bash
 npm run test:unit
@@ -163,8 +164,8 @@ Run unit tests and all feature scenarios together:
 npm test
 ```
 
-The full suite requires the smoke-test host prerequisites and Bash for the
-repository infrastructure scenarios.
+The full suite requires both the smoke-test host prerequisites and the
+[CI verification setup](#local-ci-verification).
 Pass Cucumber options with `npm run test:features -- ...`, not `npm test`;
 tag expressions include the `@` prefix.
 
@@ -174,9 +175,77 @@ Existing specifications in [features/repo-infrastructure/](features/repo-infrast
 cover CI, linting, Renovate dependency management, and Mergify merge queue
 automation.
 
-The repository infrastructure suite requires Bash on `PATH` to execute the
-workflow gate. Run it with:
+### Local CI verification
+
+The repository infrastructure suite executes the actual linters and workflow
+gate, and evaluates scheduling from the checked-in workflow. Use a POSIX host
+with Bash, Git, Go, Python 3 (with `venv`), and ShellCheck on `PATH`, plus the
+Node.js/npm and native dependency build prerequisites described above.
+The setup script needs network access to download its tools and dependencies.
+
+From the repository root, install the locked Node dependencies (including
+markdownlint-cli2), then install actionlint **1.7.11** and yamllint **1.37.1**
+locally and add them to the current shell's `PATH`:
+
+```bash
+npm ci
+bash scripts/setup-ci-linters.sh
+export PATH="$PWD/.ci-linters/bin:$PWD/.ci-linters/venv/bin:$PATH"
+```
+
+The script installs into the ignored `.ci-linters/` directory; it does not
+install ShellCheck. Supply ShellCheck separately (CI uses the runner's version).
+The Python requirements are fully pinned and hash-verified, so `pip` refuses
+packages that do not match the recorded hashes. Repeat the `export` in each new
+shell used for verification.
+
+The `package.json` `overrides` entry pins the transitive `re2js` dependency of
+`markdownlint` to **2.9.1**. `markdownlint` 0.42.0 depends on 2.8.6, which is
+affected by [GHSA-gg6h-894w-4m9c](https://github.com/advisories/GHSA-gg6h-894w-4m9c)
+(CVE-2026-116795); 2.9.1 is a compatible patch release. Remove the override once
+`markdownlint` depends on 2.8.7 or later.
+
+Run each linter through the same entrypoint used by CI:
+
+```bash
+node scripts/ci-lint.js markdownlint
+node scripts/ci-lint.js yamllint
+node scripts/ci-lint.js actionlint
+node scripts/ci-lint.js shellcheck
+```
+
+The runner selects matching Git-tracked and non-ignored untracked files, so
+local edits are included. Each discovered path is passed as a literal file, so
+characters such as a leading `!`, `#`, or `-` cannot exclude it or turn it into
+a flag. An empty or failed discovery is a verification failure, and missing
+tools fail rather than being skipped. With explicitly empty input, the runner
+still invokes the tool's version check.
+
+Run the infrastructure acceptance scenarios without launching OpenCode:
 
 ```bash
 npm run test:features -- --tags '@component:repo-infrastructure'
 ```
+
+For focused scheduler and aggregate-gate unit checks:
+
+```bash
+node --test features/tests/ci-scheduling.test.js features/tests/workflow-gate*.test.js
+```
+
+Scheduling verification is a local model, not a GitHub Actions run. It covers
+pull requests targeting `main` (opened, synchronized, or reopened), pushes to
+`main`, and manual dispatch. It supports literal branch filters, pull-request
+event types, job dependencies, and job conditions `true`, `false`, and
+`always()`. Unsupported filters, expressions, matrices, or reusable-workflow
+jobs fail rather than being assumed scheduled. Jobs that do not run directly on
+an Ubuntu runner, or that set a container, shell, environment, or defaults
+override, are rejected because the local executors assume GitHub's implicit
+Linux Bash shell. Required checks are taken from the `Successful CI` job's
+`needs` list; every other job must be listed there,
+so a renamed or added check cannot escape scheduling verification. A required
+job disabled with `if: false` is not reported as scheduled. The gate checks
+evaluate the workflow's expression and execute its Bash script locally,
+including failure, cancellation, and skipped-job cases. These checks do not
+execute workflow actions or establish that GitHub-hosted jobs will run
+successfully.
