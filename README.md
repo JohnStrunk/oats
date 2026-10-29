@@ -169,6 +169,98 @@ The full suite requires both the smoke-test host prerequisites and the
 Pass Cucumber options with `npm run test:features -- ...`, not `npm test`;
 tag expressions include the `@` prefix.
 
+### Runner-contract disk limits
+
+Every process launched through `runProcess` in
+`features/tests/migration-process.js` runs behind a POSIX per-file write
+ceiling of **8 MiB** (at most 8 MiB + 512 bytes, depending on the shell's
+`ulimit -f` block size). The affected callers are the acceptance-step support
+in `features/tests/migration-step-support.js` (including the disk-limit fixture
+steps in `features/steps/disk-limit-support.js`),
+`features/tests/migration-contract.test.js`,
+`features/tests/runner-file-limit.test.js`,
+`features/tests/workflow-gate-property.test.js`, and any future code that calls
+`runProcess`. It is not a limit on `npm test` itself, the TUI smoke helper
+(which does not use `runProcess`), or commands run outside the helper.
+
+A launch establishes the ceiling like this:
+
+1. A Node probe runs under `ulimit -f 1` and installs a no-op `SIGXFSZ` handler
+   so an over-limit write can report `EFBIG` instead of terminating the probe.
+   It writes one byte at a time until the kernel reports `EFBIG`, then prints
+   the resulting file size. Writing single bytes makes the measurement
+   independent of whether an oversized write is rejected outright or partially
+   written up to the limit.
+2. The wrapper computes the smallest `ulimit -f` block count whose product is
+   at least 8 MiB, and refuses the launch if that product exceeds 8 MiB + 512
+   bytes or if the probe could not observe a ceiling within its 8192-byte
+   budget.
+3. It sets **both** the soft and hard limits to that block count, reads both
+   back with `ulimit -S -f` and `ulimit -H -f`, and exits 125 before `exec` if
+   any step fails. The feature runner therefore never starts when the ceiling
+   cannot be established.
+
+The hard/soft equality matters: a process may lower its soft limit and raise
+it again, but it can only raise it up to the inherited hard limit. Because the
+wrapper sets both to the ceiling, neither the process nor its descendants can
+raise the ceiling without OS privilege (`CAP_SYS_RESOURCE` or equivalent). A
+process that was already running before the launch, or one that another
+same-user process asks to perform the write, does not inherit the limit.
+
+Behavior verified on this Linux host with a measured 512-byte `ulimit -f`
+block size:
+
+- A write cannot extend a file past the ceiling: it may write partially up to
+  the ceiling, or fail with `EFBIG` (or terminate a writer with the default
+  `SIGXFSZ` disposition). The ceiling also applies to `write(2)` with a seek
+  offset past the ceiling, `truncate`/`ftruncate`, `fallocate`, and
+  `copyFile`/`copy_file_range`. A write that reaches exactly the ceiling succeeds.
+- Writes at offsets at or past the ceiling fail even when the file already
+  existed and was larger; the limit is checked against the write offset, not
+  just the resulting size. Overwriting the first 8 MiB of such a file,
+  shrinking it, or deleting it is not prevented.
+- Page-fault writes through an `mmap` of an already larger file are not
+  checked against the ceiling. On this host, an `mmap` write far past EOF
+  faults instead of extending the file.
+- Data written to non-regular files is not limited: a 4 MiB pipe write
+  succeeded under a 1 MiB ceiling, and the reader can store it anywhere.
+- The ceiling is per file, not aggregate: 12 files of 1 MiB each succeeded
+  under a 1 MiB ceiling. File count, total bytes across files, inodes, memory,
+  CPU, and process count remain bounded only by host capacity, not by this
+  limit.
+
+The existing bounded reads remain separate: JSON reports are limited to
+**8 MiB**, and probe logs to **64 KiB**. A read limit protects the parent from
+loading oversized output; it does not stop a child from filling disk before
+that read. The write ceiling also covers other regular files written by the
+limited process and descendants that inherit it, not just reports or probe
+logs. A partial report is not evidence of a successful run.
+
+Portability: the wrapper needs `/bin/sh` with `ulimit -f`, `ulimit -S -f`, and
+`ulimit -H -f`. It fails closed when the shell cannot express a ceiling in the
+allowed range, when its block size exceeds the 8192-byte probe budget, or when
+the Node runtime cannot install the probe's `SIGXFSZ` handler. The probe does
+not depend on Node's default signal disposition; failure to observe `EFBIG`
+also refuses the launch. Windows is unsupported; the helper throws.
+
+This is a resource guardrail, **not a security sandbox**. In addition to the
+limitations above, it imposes no destination-path restriction (a limited
+process can write anywhere the user can), and it cannot stop a process from
+delegating writes to a same-user process that does not inherit the limit.
+Process-group cleanup cannot guarantee termination of descendants that escape
+into other groups or sessions; changing groups alone does not remove an
+inherited file-size limit. Run untrusted code only in stronger isolation.
+
+Alternatives have different trade-offs. Streaming reports with a byte-counted
+consumer can stop oversized report output earlier, but requires runner plumbing
+changes and does not bound arbitrary child-created files. Watching directory
+sizes is racy and misses writes elsewhere. Filesystem quotas or a bounded
+filesystem can enforce an aggregate budget, but require host provisioning,
+mount/OS support, or privileges; a directory quota alone does not cover writes
+outside that directory. A container or VM with restricted writable storage and
+appropriate process isolation is a stronger option for hostile workloads, not
+a portable assumption for these local contributor checks.
+
 ## Repository infrastructure
 
 Existing specifications in [features/repo-infrastructure/](features/repo-infrastructure/)
