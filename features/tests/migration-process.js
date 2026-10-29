@@ -12,6 +12,85 @@ const EXIT_WAIT_MS = 15000
 const CLOSE_WAIT_MS = 10000
 const FINAL_WAIT_MS = 20000
 const IPC_DRAIN_MS = 200
+// Every launch gets a per-file write ceiling that bounds how far any single
+// regular file can grow before the parent's bounded read rejects output (#12).
+// It is not an aggregate disk quota: file count, total bytes across files,
+// non-regular files, and writes from processes outside the launch remain
+// unrestricted.
+// `ulimit -f` counts blocks, but the block size depends on the shell and its
+// POSIX mode (512 bytes in POSIX mode, 1024 in non-POSIX bash), so measure it
+// instead of assuming one. The measured block size, the 8 MiB target, and the
+// tolerated overshoot are all in bytes.
+const FILE_LIMIT_BYTES = 8 * 1024 * 1024
+const FILE_LIMIT_SLACK_BYTES = 512
+const UNIT_PROBE_MAX_BYTES = 8192
+// One byte per write: the observed size is the exact ceiling whether the OS
+// rejects an oversized write outright or partially writes up to the limit.
+// A probe that cannot observe EFBIG within the budget fails closed.
+//
+// The kernel raises SIGXFSZ when a write would pass the ceiling, and the write
+// reports EFBIG only when that signal is ignored or handled. Node currently
+// ignores SIGXFSZ by default on this host, but that default is not a portable
+// contract across runtimes and versions, so the probe installs its own no-op
+// handler. With the default disposition the process is instead terminated by
+// SIGXFSZ (a shell reports that as 128 + the signal number). If the runtime
+// cannot handle the signal, the probe exits without a ceiling, and the wrapper
+// refuses to launch the runner (fail closed).
+export const UNIT_PROBE = `
+const fs = require('node:fs')
+const path = process.argv[1]
+let handlesSigxfsz = false
+try {
+  if (require('node:os').constants.signals.SIGXFSZ) {
+    process.on('SIGXFSZ', () => {})
+    handlesSigxfsz = true
+  }
+} catch {}
+if (!handlesSigxfsz) process.exit(1)
+let fd
+let ceiling
+try {
+  fd = fs.openSync(path, 'wx')
+  const byte = Buffer.alloc(1)
+  for (let offset = 0; offset <= ${UNIT_PROBE_MAX_BYTES}; offset++) {
+    try { fs.writeSync(fd, byte) } catch (error) {
+      if (error.code === 'EFBIG') ceiling = fs.fstatSync(fd).size
+      break
+    }
+  }
+} catch {}
+try { if (fd !== undefined) fs.closeSync(fd) } catch {}
+try { fs.rmSync(path, { force: true }) } catch {}
+if (ceiling === undefined) process.exit(1)
+process.stdout.write(String(ceiling))
+`
+// The smallest block count whose product is at least FILE_LIMIT_BYTES must
+// stay within the tolerated overshoot. Both soft and hard limits are set to
+// that count, so neither the process nor its descendants can raise the
+// ceiling without OS privilege. Any failure exits 125 before exec, so the
+// runner never starts. Exported with UNIT_PROBE so tests can exercise both
+// ulimit block sizes without replacing /bin/sh.
+export const LIMITED_EXEC = `
+unit=$( (ulimit -f 1 && "$1" -e "$2" "$3") ) || {
+  echo 'Unable to establish file size limit' >&2; exit 125
+}
+case "$unit" in
+  ''|*[!0-9]*) echo 'Unable to establish file size limit' >&2; exit 125 ;;
+esac
+[ "$unit" -gt 0 ] || { echo 'Unable to establish file size limit' >&2; exit 125; }
+limit=$(( (${FILE_LIMIT_BYTES} + unit - 1) / unit ))
+cap=$(( limit * unit ))
+[ "$cap" -ge ${FILE_LIMIT_BYTES} ] &&
+  [ "$cap" -le ${FILE_LIMIT_BYTES + FILE_LIMIT_SLACK_BYTES} ] || {
+  echo 'Unable to establish file size limit' >&2; exit 125
+}
+ulimit -f "$limit" || { echo 'Unable to establish file size limit' >&2; exit 125; }
+[ "$(ulimit -S -f)" = "$limit" ] && [ "$(ulimit -H -f)" = "$limit" ] || {
+  echo 'Unable to verify file size limit' >&2; exit 125
+}
+shift 3
+exec "$@"
+`
 // Worst sequential bounded waits after the run deadline. The step deadline
 // must allow even the failure path and its final cleanup attempt to finish.
 export const PROCESS_MAX_CLEANUP_MS = MAX_GRACE_MS + EXIT_WAIT_MS + CLOSE_WAIT_MS + FINAL_WAIT_MS + IPC_DRAIN_MS
@@ -65,7 +144,9 @@ export async function runProcess(command, args, { cwd, env, timeout = 120000, gr
   let protocolMessage
   let deadline
   const connectAbort = new AbortController()
-  const supervisor = spawn(process.execPath, [supervisorPath, socketPath, command, ...args], {
+  const supervisor = spawn(process.execPath, [supervisorPath, socketPath,
+    '/bin/sh', '-c', LIMITED_EXEC, 'oats-limited-exec', process.execPath, UNIT_PROBE,
+    join(dir, 'limit-probe'), command, ...args], {
     cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
   })
   function capture(stream, chunk) {

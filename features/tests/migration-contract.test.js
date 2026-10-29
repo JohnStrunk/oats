@@ -1,18 +1,17 @@
 // Independent CLI-boundary checks for the test-runner migration.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import test from 'node:test'
 import { cleanupSandbox, populateSandbox, populateDiscoverySandbox, prepareNegativeFixture, sandboxEnvironment } from './migration-sandbox.js'
-import { runProcess } from './migration-process.js'
+import { LIMITED_EXEC, PROCESS_MAX_CLEANUP_MS, runProcess, UNIT_PROBE } from './migration-process.js'
 import { assertCompleteInventory } from './migration-inventory.js'
 import { requireFixtureScenario } from './migration-fixture-result.js'
 import { readBoundedText, MAX_REPORT_BYTES, MAX_PROBE_BYTES } from './migration-output.js'
 import { MIGRATION_RUN_TIMEOUT_MS, MIGRATION_STEP_TIMEOUT_MS } from './migration-time-budget.js'
-import { PROCESS_MAX_CLEANUP_MS } from './migration-process.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const baseline = JSON.parse(readFileSync(join(root, 'features/tests/migration-baseline.json'), 'utf8'))
@@ -366,13 +365,69 @@ test('child-produced report and probe files are bounded by bytes', async t => {
   assert.throws(() => readBoundedText(link, 256), /ELOOP/)
 })
 
-test('production report and probe byte ceilings reject child-created oversized files', async t => {
+// Shells read startup and option variables from the environment before running
+// a command: POSIXLY_CORRECT, SHELLOPTS, and BASHOPTS can switch bash into
+// POSIX mode (512-byte ulimit blocks), and BASH_ENV or ENV would run arbitrary
+// startup code. A block-size probe must observe the shell's own defaults.
+const SHELL_STARTUP_VARIABLES = ['POSIXLY_CORRECT', 'SHELLOPTS', 'BASHOPTS', 'BASH_ENV', 'ENV']
+
+function isolatedShellEnvironment() {
+  const env = { ...process.env }
+  for (const name of SHELL_STARTUP_VARIABLES) delete env[name]
+  return env
+}
+
+test('the file-size ceiling adapts to the shell ulimit block size', t => {
+  const bash = '/bin/bash'
+  if (!existsSync(bash)) return t.skip('/bin/bash is unavailable to exercise a non-POSIX ulimit block size')
+  const dir = temp(t)
+  const run = (shell, args) => {
+    const result = spawnSync(shell, args, { encoding: 'utf8', timeout: 30000, env: isolatedShellEnvironment() })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout
+  }
+  const unit = (shell, name) => run(shell,
+    ['-c', 'ulimit -f 1 && exec "$@"', 'probe-sh', process.execPath, '-e', UNIT_PROBE, join(dir, name)]).trim()
+  // `/bin/sh` may legitimately report a different block size on another host,
+  // and the wrapper measures it rather than assuming one, so accept any
+  // positive measurement. GNU bash outside POSIX mode uses 1024-byte blocks,
+  // which exercises the non-512 path explicitly.
+  const posixUnit = Number(unit('/bin/sh', 'posix-probe'))
+  assert.ok(Number.isInteger(posixUnit) && posixUnit > 0, `unexpected /bin/sh ulimit -f block size: ${posixUnit}`)
+  // A host build that defaults to POSIX mode has no non-POSIX block size to
+  // exercise; the wrapper still measures whatever the shell reports.
+  const posixMode = /^posix\s+(on|off)$/m.exec(run(bash, ['-c', 'set -o']))
+  assert.ok(posixMode, 'bash must report its own posix shell option state')
+  if (posixMode[1] === 'on') return t.skip('host /bin/bash defaults to POSIX mode, so 1024-byte ulimit blocks are unavailable')
+  assert.equal(unit(bash, 'non-posix-probe'), '1024', 'non-POSIX bash ulimit -f blocks are 1024 bytes')
+
+  // The same wrapper must turn 1024-byte blocks into an exact 8 MiB ceiling.
+  const capped = join(dir, 'capped')
+  const target = `const fs = require('node:fs')
+if (require('node:os').constants.signals.SIGXFSZ) process.on('SIGXFSZ', () => {})
+const path = process.argv[1]
+fs.writeFileSync(path, Buffer.alloc(8 * 1024 * 1024))
+let code = null
+try { fs.appendFileSync(path, 'x') } catch (error) { code = error.code }
+console.log(JSON.stringify({ size: fs.statSync(path).size, code }))
+`
+  const wrapped = run(bash,
+    ['-c', LIMITED_EXEC, 'oats-limited-exec', process.execPath, UNIT_PROBE, join(dir, 'cap-probe'), process.execPath, '-e', target, capped])
+  assert.deepEqual(JSON.parse(wrapped), { size: 8 * 1024 * 1024, code: 'EFBIG' })
+})
+
+test('production report and probe read ceilings reject oversized files', t => {
   const dir = temp(t)
   const report = join(dir, 'report.json')
   const probe = join(dir, 'probe.log')
-  const script = `const fs=require('node:fs');for(const [f,n] of ${JSON.stringify([[report, MAX_REPORT_BYTES + 1], [probe, MAX_PROBE_BYTES + 1]])}){fs.writeFileSync(f,'');fs.truncateSync(f,n)}`
-  const child = await runProcess(process.execPath, ['-e', script], { cwd: dir, env: process.env, timeout: 5000 })
-  assert.equal(child.status, 0)
+  // Create the fixtures here, outside the limited child. The per-file write
+  // ceiling is exactly 8 MiB on common shells, so a limited child cannot
+  // create a report one byte over the read ceiling on every host. The read
+  // ceiling, not the writer, is what this test checks.
+  for (const [path, bytes] of [[report, MAX_REPORT_BYTES + 1], [probe, MAX_PROBE_BYTES + 1]]) {
+    writeFileSync(path, '')
+    truncateSync(path, bytes)
+  }
   assert.throws(() => readBoundedText(report, MAX_REPORT_BYTES), /File exceeds 8388608 bytes/)
   assert.throws(() => readBoundedText(probe, MAX_PROBE_BYTES), /File exceeds 65536 bytes/)
 })
