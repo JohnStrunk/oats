@@ -90,9 +90,15 @@ that entrypoint because the v2.0.32 host's local-directory resolver needs the
 root file even with the package export present. Keep this shim when changing
 the plugin entrypoint.
 
-The verification commands below use [uv](https://docs.astral.sh/uv/) to run
-Behave with the infrastructure suite's Python dependencies. Run them from the
-repository root.
+Run verification commands from the repository root. Run the smoke harness's
+unit tests with Python 3:
+
+```bash
+python3 -m unittest discover -s features/tests
+```
+
+The Behave commands below use [uv](https://docs.astral.sh/uv/) to supply the
+infrastructure suite's Python dependencies.
 
 Run the real-host TUI smoke scenarios:
 
@@ -101,11 +107,22 @@ uvx --with pyyaml --with json5 behave --tags=component:plugin-ui
 ```
 
 These scenarios require a POSIX host with pseudo-terminal support and an
-OpenCode v2 executable on `PATH`. Set `OATS_OPENCODE=/absolute/path/to/opencode`
-to select another executable. The harness starts a real standalone TUI with
-temporary home and XDG directories, checks for the rendered startup toast,
-and runs a no-plugin control that must not show it. No model interaction is
-required. These are host smoke tests, not token-reporting tests.
+OpenCode **v2.0.32** executable on `PATH`. Set
+`OATS_OPENCODE=/absolute/path/to/opencode` to select that host explicitly.
+The harness starts a real standalone TUI with temporary home and XDG
+directories and a minimal child environment. It checks for the rendered
+startup toast and runs a no-plugin control that must not show it. No model
+interaction is required. These are host smoke tests, not token-reporting tests.
+
+For v2.0.32, the harness sets `OPENCODE_DISABLE_PROJECT_CONFIG=1`,
+`OPENCODE_DISABLE_AUTOUPDATE=1`, and `OPENCODE_DISABLE_MODELS_FETCH=1` to
+suppress project and ancestor configuration discovery, automatic updates, and
+model metadata fetching. System configuration is independent of these controls,
+so the harness refuses to run if a system configuration source exists or cannot
+be inspected: `/etc/opencode` on non-macOS hosts, or the OpenCode system and
+managed-preference locations on macOS. Use a host without those sources rather
+than removing system configuration to run a test. These controls do not
+guarantee network isolation or offline operation.
 
 To use the same locked OpenCode host as CI without a global installation:
 
