@@ -85,7 +85,8 @@ Feature: When a valid authentication token is provided, the session manager shal
 ## 2. Step Definitions Organization
 
 Step definition implementations must be strictly separated by step semantics
-and located in:
+and located in the directories below. For the current generation, implement
+steps as JavaScript ES modules (`.js`) using Cucumber.js.
 
 ```text
 features/
@@ -109,16 +110,36 @@ features/
 
 ### 2.2 Naming and Modularity
 
-- Step definition files mush implement exactly one step.
+- Step definition files must implement exactly one step.
 - Name step files as a slugified version of the step that they implement, e.g.:
-  - `features/steps/given/an-authenticated-user-exists.<ext>`
-  - `features/steps/when/a-valid-login-request-is-received.<ext>`
-  - `features/steps/then/the-session-expiry-is-extended.<ext>`
+  - `features/steps/given/an-authenticated-user-exists.js`
+  - `features/steps/when/a-valid-login-request-is-received.js`
+  - `features/steps/then/the-session-expiry-is-extended.js`
 - Keep step definitions reusable across scenarios, and attempt to re-use
   existing steps rather than creating new ones for similar behavior.
 - Step definitions must test against the actual system boundaries (e.g.,
   public API, CLI invocation, service interface) rather than bypassing logic
   with mock-only assertions.
+
+### 2.3 Support Code and Test Execution
+
+- Keep shared helpers, scenario World setup, and lifecycle hooks separate from
+  files that register individual steps. Keep scenario state isolated and clean
+  up resources, including child processes and temporary directories, on failure
+  as well as success.
+- Cucumber's ES-module configuration explicitly loads step files; shared support
+  is loaded transitively through their imports. Keep unit-test files out of
+  Cucumber's support-code import graph.
+- Harness unit tests currently use Node.js's built-in test runner and run
+  without launching the real OpenCode host. The tagged smoke scenarios exercise
+  that boundary.
+- From the repository root, run `npm run test:unit` for unit tests,
+  `npm run test:features` for all acceptance scenarios, or `npm test` for both.
+  Filter acceptance scenarios with a Cucumber tag expression, for example
+  `npm run test:features -- --tags '@component:plugin-ui'`.
+- Follow [README.md](../README.md) for real-host smoke-test prerequisites and
+  isolation constraints. A test-framework migration must preserve observable
+  assertions and negative controls, not replace them with mock-only checks.
 
 ---
 
@@ -126,9 +147,9 @@ features/
 
 Where behavior specifies invariants across variable input ranges:
 
-- In the step definition, use the project's property-based testing framework
-  (e.g., `Hypothesis` in Python, `fast-check` in JS/TS, `proptest` /
-  `quickcheck` in Rust).
+- In the step definition, use a JavaScript property-based testing framework
+  compatible with the current stack (for example, `fast-check`). Record the
+  selected dependency in the package manifest and lockfile.
 - The step handler should run randomized generative inputs to verify that the
   normative requirement holds across boundary values, null inputs, and extreme
   scales.

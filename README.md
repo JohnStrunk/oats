@@ -13,8 +13,14 @@ Prerequisites:
 
 - OpenCode v2. The host version used for development and testing is **v2.0.32**;
   compatibility with other releases is not established.
-- Node.js **22** (the major version used in CI) and npm to install the locked SDK dependency,
-  `@opencode/plugin@2.0.32`.
+- Node.js and npm for checkout development and verification. Local verification
+  has used Node.js **22.23.4** (the version in `.nvmrc`); CI uses **26**. For
+  Node.js 22, the locked dependency tree requires **22.19.0 or later**, including
+  a production transitive dependency of `@opencode/plugin@2.0.32`; it is not
+  solely a test dependency requirement. The Cucumber.js test runner declares
+  support for Node.js **22, 24, or 26 and later** (not 23 or 25); this declared
+  range does not establish verification of every version in it. The root package
+  does not currently declare an `engines` field to enforce these constraints.
 
 From this checkout, install dependencies:
 
@@ -90,29 +96,42 @@ that entrypoint because the v2.0.32 host's local-directory resolver needs the
 root file even with the package export present. Keep this shim when changing
 the plugin entrypoint.
 
-Run verification commands from the repository root. Run the smoke harness's
-unit tests with Python 3:
+Acceptance tests use Cucumber.js with JavaScript ES modules; unit tests use
+Node.js's built-in test runner. Install the locked dependencies with
+`npm ci`, then run verification commands from the repository root.
+
+The real-host smoke harness needs a native PTY dependency. If installation
+builds it from source, Linux requires Python, `make`, and a C/C++ build toolchain;
+macOS requires Python and the Xcode command-line build tools. Python may also
+be used by unrelated repository tooling; it is not the acceptance-test runner.
+
+Run the unit tests, including smoke-harness, migration, and workflow-gate tests,
+without launching OpenCode. These tests require Bash on `PATH` for the gate
+checks:
 
 ```bash
-python3 -m unittest discover -s features/tests
+npm run test:unit
 ```
-
-The Behave commands below use [uv](https://docs.astral.sh/uv/) to supply the
-infrastructure suite's Python dependencies.
 
 Run the real-host TUI smoke scenarios:
 
 ```bash
-uvx --with pyyaml --with json5 behave --tags=component:plugin-ui
+npm run test:features -- --tags '@component:plugin-ui'
 ```
 
-These scenarios require a POSIX host with pseudo-terminal support and an
-OpenCode **v2.0.32** executable on `PATH`. Set
+These scenarios require a POSIX host with pseudo-terminal and Unix-domain socket
+support, plus an OpenCode **v2.0.32** executable on `PATH`. Process inspection
+requires `/proc` on Linux or `ps` on other supported POSIX hosts. Windows is
+unsupported. Set
 `OATS_OPENCODE=/absolute/path/to/opencode` to select that host explicitly.
 The harness starts a real standalone TUI with temporary home and XDG
 directories and a minimal child environment. It checks for the rendered
 startup toast and runs a no-plugin control that must not show it. No model
 interaction is required. These are host smoke tests, not token-reporting tests.
+
+Cleanup covers only the supervisor's process group. Descendants can escape into
+other process groups or sessions; supervisor failure may leave cleanup
+unconfirmed. The harness does not guarantee termination of every descendant.
 
 For v2.0.32, the harness sets `OPENCODE_DISABLE_PROJECT_CONFIG=1`,
 `OPENCODE_DISABLE_AUTOUPDATE=1`, and `OPENCODE_DISABLE_MODELS_FETCH=1` to
@@ -129,14 +148,25 @@ To use the same locked OpenCode host as CI without a global installation:
 ```bash
 npm ci --prefix .github/tooling/opencode-host
 OATS_OPENCODE="$PWD/.github/tooling/opencode-host/node_modules/.bin/opencode" \
-  uvx --with pyyaml --with json5 behave --tags=component:plugin-ui
+  npm run test:features -- --tags '@component:plugin-ui'
 ```
 
 Run all feature scenarios, including the host smoke tests:
 
 ```bash
-uvx --with pyyaml --with json5 behave
+npm run test:features
 ```
+
+Run unit tests and all feature scenarios together:
+
+```bash
+npm test
+```
+
+The full suite requires the smoke-test host prerequisites and Bash for the
+repository infrastructure scenarios.
+Pass Cucumber options with `npm run test:features -- ...`, not `npm test`;
+tag expressions include the `@` prefix.
 
 ## Repository infrastructure
 
@@ -144,8 +174,9 @@ Existing specifications in [features/repo-infrastructure/](features/repo-infrast
 cover CI, linting, Renovate dependency management, and Mergify merge queue
 automation.
 
-Run the repository infrastructure verification suite with:
+The repository infrastructure suite requires Bash on `PATH` to execute the
+workflow gate. Run it with:
 
 ```bash
-uvx --with pyyaml --with json5 behave --tags=component:repo-infrastructure
+npm run test:features -- --tags '@component:repo-infrastructure'
 ```
