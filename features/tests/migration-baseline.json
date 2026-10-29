@@ -1,0 +1,24 @@
+{
+  "features/plugin-ui/when-opencode-v2-loads-the-locally-configured-oats-tui-plugin-the-plugin-ui-shall-present-an-oats-loaded-startup-toast.feature": [
+    [10, "The locally configured plugin starts in the TUI"],
+    [15, "The smoke test does not observe the toast without the plugin"],
+    [20, "An ancestor plugin cannot impersonate the configured OATS plugin"]
+  ],
+  "features/repo-infrastructure/if-a-dependency-update-resolves-a-vulnerability-alert-then-the-renovate-configuration-shall-enforce-an-immediate-zero-day-release-age.feature": [[10, "Vulnerability alerts bypass the cooldown window"]],
+  "features/repo-infrastructure/if-any-configured-test-or-lint-check-job-fails-or-is-cancelled-then-the-ci-workflow-shall-report-a-failure-conclusion-for-the-successful-ci-job.feature": [[10, "A test job fails"], [16, "A lint check job fails"], [22, "A prerequisite job is cancelled"]],
+  "features/repo-infrastructure/the-ci-workflow-shall-reference-all-github-actions-using-full-semantic-versions.feature": [[10, "All workflow step actions specify full semantic versions"]],
+  "features/repo-infrastructure/the-mergify-configuration-shall-enforce-serialized-single-pull-request-batching-and-merge-commits.feature": [[10, "Single batch size and merge commit method are configured"]],
+  "features/repo-infrastructure/the-renovate-configuration-shall-enforce-a-ten-day-cooldown-for-standard-packages-and-a-weekly-schedule-for-docker-images.feature": [[10, "Default minimum release age is ten days"], [15, "Docker images use a weekly schedule in lieu of release age timestamps"]],
+  "features/repo-infrastructure/the-renovate-configuration-shall-extend-recommended-presets-with-digest-pinning-for-containers-and-github-actions-to-semantic-versions.feature": [[10, "Recommended presets and digest pinning are configured"]],
+  "features/repo-infrastructure/when-a-pull-request-is-created-or-updated-the-mergify-configuration-shall-enqueue-the-pull-request-into-the-default-merge-queue.feature": [[10, "Pull request rules configure default queue action"]],
+  "features/repo-infrastructure/when-a-pull-request-modifies-github-actions-workflows-the-renovate-configuration-shall-enable-automatic-rebasing-when-behind-the-base-branch.feature": [[10, "Workflow file updates are automatically rebased when behind base branch"]],
+  "features/repo-infrastructure/when-a-pull-request-targeting-main-a-push-to-main-or-a-workflow-dispatch-event-occurs-the-ci-workflow-shall-execute-all-configured-automated-test-and-lint-check-jobs.feature": [[10, "CI workflow triggers on pull request targeting main"], [16, "CI workflow triggers on direct push to main"], [22, "CI workflow triggers on manual workflow dispatch"]],
+  "features/repo-infrastructure/when-all-configured-test-and-lint-check-jobs-complete-successfully-the-ci-workflow-shall-report-a-successful-conclusion-for-the-successful-ci-job.feature": [
+    [10, "All prerequisite test and lint jobs complete successfully"],
+    [25, "Invariant aggregate success across varying job combinations", "1 test jobs have completed with conclusion \"success\"", "1 lint jobs have completed with conclusion \"success\""],
+    [26, "Invariant aggregate success across varying job combinations", "2 test jobs have completed with conclusion \"success\"", "3 lint jobs have completed with conclusion \"success\""],
+    [27, "Invariant aggregate success across varying job combinations", "5 test jobs have completed with conclusion \"success\"", "1 lint jobs have completed with conclusion \"success\""]
+  ],
+  "features/repo-infrastructure/when-repository-lint-checks-are-executed-the-ci-workflow-shall-verify-markdown-documentation-yaml-configurations-and-shell-scripts.feature": [[14, "Markdown documentation linting"], [19, "YAML and workflow linting"], [24, "Shell script linting"]],
+  "features/repo-infrastructure/while-evaluating-merge-queue-conditions-mergify-shall-require-the-successful-ci-check-and-review-approval-or-trusted-authorship.feature": [[10, "Queue conditions require CI check success"], [15, "Queue conditions require review approval or trusted author"], [20, "Queue conditions block on change requests or do-not-merge label"]]
+}

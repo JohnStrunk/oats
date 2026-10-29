@@ -43,6 +43,17 @@ specification of the system:
 
 - **Consistency:** The programming language, framework, and toolchain must
   remain consistent within a given generation of the project.
+- **Current generation's stack:** Plugin code and test implementations use
+  JavaScript ES modules, with Cucumber.js for Gherkin acceptance tests. Unit
+  tests currently use Node.js's built-in test runner. These choices describe
+  this generation, not a restriction on technology selection for future
+  generations. Run `npm run test:unit` for unit tests,
+  `npm run test:features` for acceptance tests, and `npm test` for both. Pass
+  Cucumber options after `--`, for example
+  `npm run test:features -- --tags '@component:repo-infrastructure'`.
+  Real-host smoke tests require the host and isolation prerequisites documented
+  in [README.md](README.md). This stack does not prohibit Python in native
+  dependency builds or unrelated tooling.
 - **Freedom of choice:** Unless an authoritative requirement in
   [`/Vision.md`](Vision.md), [`/Architecture.md`](Architecture.md), or
   [`/features/**`](features) explicitly mandates a specific technology, the
