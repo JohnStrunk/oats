@@ -1,9 +1,12 @@
 # Vision
 
-**OATS (OpenCode Agent Token Stats)** is a planned OpenCode V2 TUI plugin for
+**OATS (OpenCode Agent Token Stats)** is an OpenCode V2 TUI plugin for
 users who want to understand token usage and cost across a session and its
 subagents while work is happening. Its goal is to make delegated work visible
 without leaving the terminal or piecing together separate session records.
+
+The current bootstrap displays an **OATS loaded** startup toast. Token usage,
+cost reporting, and the views described below remain planned.
 
 The intended experience combines a compact sidebar overview with a larger
 detail view. Together, these views will connect agent and subagent names to

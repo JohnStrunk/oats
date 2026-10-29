@@ -1,0 +1,12 @@
+{
+  "name": "opencode-oats",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./tui": "./src/tui.js"
+  },
+  "files": ["src", "tui.js"],
+  "dependencies": {
+    "@opencode/plugin": "2.0.32"
+  }
+}

@@ -1,11 +1,59 @@
 # OATS — OpenCode Agent Token Stats
 
-OATS is a planned OpenCode v2 plugin for understanding token usage and
-estimated costs across agents, subagents, and models.
+OATS is a minimal OpenCode v2 TUI plugin, intended to help explain token usage
+and estimated costs across agents, subagents, and models.
 
-**Status: project definition only.** The plugin is not implemented. This
-repository currently contains development guidance and repository
-infrastructure specifications, not an installable plugin.
+**Current behavior:** a brief **OATS loaded** startup toast confirms that the
+plugin loaded. Token statistics, cost estimates, and reporting views are not
+implemented yet.
+
+## Try the local plugin
+
+Prerequisites:
+
+- OpenCode v2. The host version used for development and testing is **v2.0.32**;
+  compatibility with other releases is not established.
+- Node.js **22** (the major version used in CI) and npm to install the locked SDK dependency,
+  `@opencode/plugin@2.0.32`.
+
+From this checkout, install dependencies:
+
+```bash
+npm ci
+opencode --version
+```
+
+For a one-off launch, replace the example path with this checkout's absolute
+path:
+
+```bash
+OPENCODE_CLI_CONFIG_CONTENT='{"plugins":["/absolute/path/to/oats"]}' opencode --standalone
+```
+
+The inline setting does not edit your configuration file. It overrides the
+configured CLI plugin list for this launch, rather than appending to it;
+include any other plugins you want to keep active. Other global settings and
+discovered project configuration still apply. `--standalone` uses a private
+server instead of the shared background service; it does not isolate your
+configuration.
+
+For persistent loading, add the absolute checkout path to the existing
+`plugins` array in `~/.config/opencode/cli.json`, or
+`$XDG_CONFIG_HOME/opencode/cli.json` if `XDG_CONFIG_HOME` is set. Preserve all
+other settings and existing plugin entries. A new file can look like this:
+
+```json
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "plugins": ["/absolute/path/to/oats"]
+}
+```
+
+Start `opencode --standalone` and look for **OATS loaded** shortly after startup.
+OATS is TUI-only: configure it in the global `cli.json`, not `opencode.json`.
+There is no project-local `cli.json`. See the official V2
+[CLI plugin configuration](https://opencode.ai/v2/docs/cli/plugins) and
+[TUI plugin API](https://opencode.ai/v2/docs/build/plugins/cli).
 
 ## Planned experience
 
@@ -28,9 +76,67 @@ The project uses an agent-assisted, specification-driven workflow:
    definitions.
 4. Implement behavior against those specifications, then verify and audit it.
 
-These documents guide future implementation; this README describes the
-planned direction, not completed plugin behavior. Feature specifications
-follow the conventions in [features/AGENTS.md](features/AGENTS.md).
+Feature specifications follow the conventions in
+[features/AGENTS.md](features/AGENTS.md). The reporting experience above remains
+planned; the startup toast is the current bootstrap behavior.
+
+## Development and verification
+
+The bootstrap is a JavaScript package with a TUI entrypoint; no build step is
+needed to load the local checkout. Run `npm ci` after dependency changes.
+
+The package exports `./tui` as `src/tui.js`. A root-level `tui.js` forwards to
+that entrypoint because the v2.0.32 host's local-directory resolver needs the
+root file even with the package export present. Keep this shim when changing
+the plugin entrypoint.
+
+Run verification commands from the repository root. Run the smoke harness's
+unit tests with Python 3:
+
+```bash
+python3 -m unittest discover -s features/tests
+```
+
+The Behave commands below use [uv](https://docs.astral.sh/uv/) to supply the
+infrastructure suite's Python dependencies.
+
+Run the real-host TUI smoke scenarios:
+
+```bash
+uvx --with pyyaml --with json5 behave --tags=component:plugin-ui
+```
+
+These scenarios require a POSIX host with pseudo-terminal support and an
+OpenCode **v2.0.32** executable on `PATH`. Set
+`OATS_OPENCODE=/absolute/path/to/opencode` to select that host explicitly.
+The harness starts a real standalone TUI with temporary home and XDG
+directories and a minimal child environment. It checks for the rendered
+startup toast and runs a no-plugin control that must not show it. No model
+interaction is required. These are host smoke tests, not token-reporting tests.
+
+For v2.0.32, the harness sets `OPENCODE_DISABLE_PROJECT_CONFIG=1`,
+`OPENCODE_DISABLE_AUTOUPDATE=1`, and `OPENCODE_DISABLE_MODELS_FETCH=1` to
+suppress project and ancestor configuration discovery, automatic updates, and
+model metadata fetching. System configuration is independent of these controls,
+so the harness refuses to run if a system configuration source exists or cannot
+be inspected: `/etc/opencode` on non-macOS hosts, or the OpenCode system and
+managed-preference locations on macOS. Use a host without those sources rather
+than removing system configuration to run a test. These controls do not
+guarantee network isolation or offline operation.
+
+To use the same locked OpenCode host as CI without a global installation:
+
+```bash
+npm ci --prefix .github/tooling/opencode-host
+OATS_OPENCODE="$PWD/.github/tooling/opencode-host/node_modules/.bin/opencode" \
+  uvx --with pyyaml --with json5 behave --tags=component:plugin-ui
+```
+
+Run all feature scenarios, including the host smoke tests:
+
+```bash
+uvx --with pyyaml --with json5 behave
+```
 
 ## Repository infrastructure
 
@@ -41,5 +147,5 @@ automation.
 Run the repository infrastructure verification suite with:
 
 ```bash
-uvx --with pyyaml --with json5 behave
+uvx --with pyyaml --with json5 behave --tags=component:repo-infrastructure
 ```

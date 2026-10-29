@@ -1,13 +1,15 @@
 # Project Architecture
 
-This document covers the planned OATS OpenCode V2 TUI plugin and the existing
-repository infrastructure. The plugin components describe conceptual boundaries
-and data flow, not an implemented plugin or a commitment to specific UI
-placements, libraries, or internal APIs.
+This document covers the OATS OpenCode V2 TUI plugin and the existing repository
+infrastructure. The current plugin bootstrap displays an **OATS loaded** startup
+toast through the OpenCode TUI host. Statistics components and their data flow
+remain planned; the descriptions below define conceptual boundaries, not a
+commitment to specific UI placements, libraries, or internal APIs.
 
 ## Main Components
 
-- **`plugin-ui`**: Presents a compact sidebar overview and a larger detail
+- **`plugin-ui`**: Currently presents the startup toast. Planned reporting
+  presents a compact sidebar overview and a larger detail
   view of session and subagent activity, identities, models, usage, rates,
   and costs. Both views draw from the same attributed usage picture.
 - **`session-data-access`**: Connects to OpenCode's session data and updates,
@@ -42,6 +44,9 @@ placements, libraries, or internal APIs.
 - **`cli`**: Developer and automation command-line interfaces for executing build tools, linters, and test runners locally or within CI containers.
 
 ## Information Flow
+
+The current bootstrap uses only the TUI host to present its startup toast. The
+following statistics flow remains planned:
 
 1. OpenCode supplies the session tree, agent and model identities, and usage
    updates to session data access. Live usage settles at step boundaries,
