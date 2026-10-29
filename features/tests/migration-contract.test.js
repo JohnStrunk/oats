@@ -1,7 +1,7 @@
 // Independent CLI-boundary checks for the test-runner migration.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -75,16 +75,32 @@ test('default discovery resolves all current and original identities', async t =
   assertCompleteInventory(root, scenarios(data))
 })
 
-for (const component of ['plugin-ui', 'repo-infrastructure']) {
+for (const component of ['plugin-ui', 'repo-infrastructure', 'session-data-access']) {
   test(`${component} discovery selects and resolves its current and original identities only`, async t => {
     const { child, data } = await runFeatures(temp(t), { args: ['--dry-run', '--tags', `@component:${component}`] })
     assert.equal(child.status, 0, child.stderr || child.stdout)
     const found = scenarios(data)
+    assert.ok(found.length > 0, `No ${component} scenarios were discovered`)
     assertBaseline(found, component)
     assertCompleteInventory(root, found, component)
     assert.ok(found.every(s => s.uri.startsWith(`features/${component}/`)))
   })
 }
+
+test('discovery sandbox copies the current component and support without linking the checkout', async t => {
+  const dir = temp(t)
+  await populateDiscoverySandbox(dir, root)
+  for (const path of ['src/session-data-access.js', 'features/steps/regression_session_helper.js']) {
+    const source = join(root, path)
+    const copy = join(dir, path)
+    assert.equal(lstatSync(copy).isSymbolicLink(), false, `${path} must be a sandbox copy`)
+    assert.equal(readFileSync(copy, 'utf8'), readFileSync(source, 'utf8'))
+  }
+  const copy = join(dir, 'src/session-data-access.js')
+  const original = readFileSync(join(root, 'src/session-data-access.js'), 'utf8')
+  appendFileSync(copy, '\n// sandbox-only marker\n')
+  assert.equal(readFileSync(join(root, 'src/session-data-access.js'), 'utf8'), original)
+})
 
 for (const component of [null, 'plugin-ui', 'repo-infrastructure']) {
   test(`default configuration executes ${component ?? 'both components'} in an isolated checkout`, async t => {

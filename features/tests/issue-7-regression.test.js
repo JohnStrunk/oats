@@ -28,6 +28,9 @@ function prepareRepository(t, mutateWorkflow = workflow => workflow) {
   const dir = temporaryDirectory(t)
   cpSync(join(root, 'features/steps'), join(dir, 'features/steps'), { recursive: true })
   cpSync(join(root, 'features/tests'), join(dir, 'features/tests'), { recursive: true })
+  // The imported support graph statically imports application modules, so the
+  // disposable checkout needs its own copy rather than the real checkout.
+  cpSync(join(root, 'src'), join(dir, 'src'), { recursive: true })
   for (const feature of [FAILURE_FEATURE, SKIPPED_FEATURE, SCHEDULING_FEATURE]) {
     mkdirSync(dirname(join(dir, feature)), { recursive: true })
     cpSync(join(root, feature), join(dir, feature))

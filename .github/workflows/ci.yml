@@ -40,6 +40,11 @@ jobs:
       - name: Run unit tests
         run: npm run test:unit
 
+      - name: Run real-host session contract test
+        env:
+          OATS_OPENCODE: ${{ github.workspace }}/.github/tooling/opencode-host/node_modules/.bin/opencode
+        run: npm run test:real-host
+
       - name: Run automated test suite
         env:
           OATS_OPENCODE: ${{ github.workspace }}/.github/tooling/opencode-host/node_modules/.bin/opencode
