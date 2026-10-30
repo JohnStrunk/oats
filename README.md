@@ -14,14 +14,18 @@ Prerequisites:
 
 - OpenCode **v2.0.32**, the pinned host version;
   compatibility with other releases is not established.
-- Node.js and npm for checkout development and verification. The checkout pins
-  Node.js **24.22.0** in `.nvmrc`; CI uses **26**. For
+- Node.js and npm for checkout development and verification. The exact Node.js
+  release is specified in `.nvmrc` and CI, which pin the same version.
+  Local verification with `npm test` has passed on Node.js **26.13.0**. For
   Node.js 22, the locked dependency tree requires **22.19.0 or later**, including
-  a production transitive dependency of `@opencode/plugin@2.0.32`; it is not
+  a production transitive dependency of `@opencode/plugin@2.1.0`; it is not
   solely a test dependency requirement. The Cucumber.js test runner declares
   support for Node.js **22, 24, or 26 and later** (not 23 or 25); this declared
   range does not establish verification of every version in it. The root package
   does not currently declare an `engines` field to enforce these constraints.
+  Official Node.js Linux binaries since Node.js 25 may require installing `libatomic`
+  separately, depending on your distribution; see the
+  [Node.js 26.13.0 release notes](https://nodejs.org/en/blog/release/v26.13.0).
 
 From this checkout, install dependencies:
 
@@ -322,6 +326,14 @@ a portable assumption for these local contributor checks.
 Existing specifications in [features/repo-infrastructure/](features/repo-infrastructure/)
 cover CI, linting, Renovate dependency management, and Mergify merge queue
 automation.
+
+Renovate groups Node.js version updates for `.nvmrc` and GitHub Actions CI into
+one pull request when both updates are available. Both files must pin the same
+exact Node.js version; CI rejects mismatched versions. Grouping alone does
+not guarantee an exact match: the datasources can offer different target
+versions or publish updates at different times, so Renovate can update one
+source ahead of the other. Such a pull request remains blocked by the exact
+equality check until both pins match.
 
 ### Local CI verification
 

@@ -20,6 +20,23 @@
       ]
     },
     {
+      "description": "Group Node.js version updates for .nvmrc and the GitHub Actions setup-node input into one branch, including major updates",
+      "groupName": "Node.js",
+      "matchManagers": [
+        "nvm",
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "node",
+        "actions/node-versions"
+      ],
+      "matchDatasources": [
+        "node-version",
+        "github-releases"
+      ],
+      "separateMajorMinor": false
+    },
+    {
       "description": "Automatically rebase PRs modifying workflow files when out of date",
       "matchFileNames": [
         ".github/workflows/**"
