@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import {
@@ -10,6 +9,7 @@ import {
   connectSupervisor,
 } from '../steps/tui_smoke_helper.js'
 import { requireRealHost } from './prerequisites.js'
+import { createTempDir } from './temp_root.js'
 
 // Run with an explicitly selected pinned host:
 //   OATS_OPENCODE=/absolute/path/to/opencode npm run test:real-host
@@ -328,8 +328,7 @@ function assertSnapshotScope(snapshot, sessionID, expectedKeys) {
 test('session data access follows the pinned OpenCode session tree', { timeout: MAX_TEST_MS }, async t => {
   const host = requireRealHost(process.env.OATS_OPENCODE)
 
-  const tempRoot = existsSync('/tmp/opencode') ? '/tmp/opencode' : tmpdir()
-  const root = mkdtempSync(join(tempRoot, 'oats-session-real-host-'))
+  const root = createTempDir('oats-session-real-host-')
   const { dirs, env } = isolatedEnvironment(root)
   // Start the server under the repository's persistent process-group leader.
   // Cleanup is confirmed only by a `clean` report, exit code 0, no signal, and

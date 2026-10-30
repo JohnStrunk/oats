@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test:unit": "node --test features/tests/*.test.js",
+    "test:unit:sidebar-ui": "node --conditions=browser --experimental-ffi --test --test-timeout=30000 features/tests/sidebar-ui.test.js",
     "test:real-host": "node features/real-host-tests/run.js",
     "test:features": "cucumber-js",
     "test": "npm run test:unit && npm run test:features"
@@ -16,14 +17,16 @@
     "tui.js"
   ],
   "dependencies": {
-    "@opencode/plugin": "2.1.1"
+    "@opencode/plugin": "2.0.32"
   },
   "peerDependencies": {
-    "solid-js": ">=1.9.0"
+    "solid-js": ">=1.9.17 <2"
   },
   "devDependencies": {
     "@actions/expressions": "0.3.61",
     "@cucumber/cucumber": "13.3.0",
+    "@opentui/core": "0.5.17",
+    "@opentui/solid": "0.5.17",
     "fast-check": "4.10.2",
     "json5": "2.2.3",
     "markdownlint-cli2": "0.24.0",
@@ -32,6 +35,14 @@
     "yaml": "2.9.1"
   },
   "overrides": {
-    "re2js": "2.9.1"
+    "re2js": "2.9.1",
+    "@opentui/solid": {
+      "solid-js": "1.9.17"
+    }
+  },
+  "peerDependenciesMeta": {
+    "solid-js": {
+      "optional": true
+    }
   }
 }

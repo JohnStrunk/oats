@@ -76,7 +76,20 @@ export function createSessionDataAccess(context) {
   let knownForkSessions = new Set()
 
   const unsubscribers = []
+  const subscribers = new Set()
   let disposeReactive = () => {}
+
+  function notify() {
+    for (const subscriber of subscribers) {
+      try { subscriber() } catch { /* A consumer must not break data access. */ }
+    }
+  }
+
+  function subscribeSnapshot(subscriber) {
+    if (disposed) return () => {}
+    subscribers.add(subscriber)
+    return () => subscribers.delete(subscriber)
+  }
 
   function readDisplayedSessionID() {
     try {
@@ -333,21 +346,21 @@ export function createSessionDataAccess(context) {
       return activePromise
     }
 
-    // A forced refresh (route change or explicit call) supersedes the active
-    // traversal immediately.
-    if (activeController) {
-      activeController.abort()
-      activeController = null
-    }
+    // Reserve this generation before calling host or abort handlers, which
+    // can synchronously refresh or dispose the service themselves.
+    const previousController = activeController
     trailingRefresh = false
-
     const run = ++generation
     const sessionID = readDisplayedSessionID()
+    if (disposed || run !== generation) return activePromise ?? Promise.resolve()
     requestedSessionID = sessionID
     if (sessionID == null) {
       loading = false
       activePromise = null
+      activeController = null
       commitEmpty()
+      previousController?.abort()
+      if (!disposed && run === generation) notify()
       return Promise.resolve()
     }
 
@@ -358,15 +371,21 @@ export function createSessionDataAccess(context) {
     activeController = controller
     loading = true
     let promise
-    promise = loadScope(
-      client,
-      sessionID,
-      previousChildren,
-      knownForkSessions,
-      limits,
-      previousScope,
-      controller.signal,
-    )
+    // Publish the in-flight operation before invoking any consumer or host
+    // code. Either may synchronously refresh or dispose this service.
+    promise = Promise.resolve()
+      .then(() => {
+        if (disposed || run !== generation) return null
+        return loadScope(
+          client,
+          sessionID,
+          previousChildren,
+          knownForkSessions,
+          limits,
+          previousScope,
+          controller.signal,
+        )
+      })
       .catch((error) => ({
         sessionID,
         scope: new Set([sessionID]),
@@ -389,10 +408,11 @@ export function createSessionDataAccess(context) {
         forks: new Set(),
       }))
       .then((result) => {
-        if (disposed || run !== generation) return
+        if (!result || disposed || run !== generation) return
         loading = false
         activeController = null
         commit(result)
+        notify()
       })
       .finally(() => {
         if (activePromise !== promise) return
@@ -404,6 +424,8 @@ export function createSessionDataAccess(context) {
         }
       })
     activePromise = promise
+    previousController?.abort()
+    if (!disposed && run === generation) notify()
     return promise
   }
 
@@ -630,6 +652,7 @@ export function createSessionDataAccess(context) {
               try {
                 if (isInActiveScope(sessionID)) {
                   processLiveEvent(type, event)
+                  if (!type.endsWith('.started')) notify()
                 }
               } catch {
                 // Live notifications are best-effort; a malformed event must
@@ -914,6 +937,7 @@ export function createSessionDataAccess(context) {
     trailingRefresh = false
     disposeReactive()
     disposeReactive = () => {}
+    subscribers.clear()
     for (const unsubscribe of unsubscribers.splice(0)) {
       try {
         unsubscribe?.()
@@ -954,5 +978,5 @@ export function createSessionDataAccess(context) {
     // Solid is inert outside a reactive root; explicit refresh still works.
   }
 
-  return { refresh, getSnapshot, dispose }
+  return { refresh, getSnapshot, subscribe: subscribeSnapshot, dispose }
 }

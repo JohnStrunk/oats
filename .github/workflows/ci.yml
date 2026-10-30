@@ -28,6 +28,11 @@ jobs:
       - name: Install plugin dependencies
         run: npm ci
 
+      - name: Create shared temporary directory
+        run: |
+          test -d /tmp/opencode || mkdir -m 700 /tmp/opencode
+          test -w /tmp/opencode
+
       - name: Install lint tools used by acceptance tests
         run: |
           bash scripts/setup-ci-linters.sh
@@ -39,6 +44,11 @@ jobs:
 
       - name: Run unit tests
         run: npm run test:unit
+
+      - name: Run sidebar UI unit tests
+        env:
+          OATS_REQUIRE_SIDEBAR_UI: "1"
+        run: npm run test:unit:sidebar-ui
 
       - name: Run real-host session contract test
         env:

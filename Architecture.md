@@ -1,12 +1,13 @@
 # Project Architecture
 
 This document covers the OATS OpenCode V2 TUI plugin and the existing repository
-infrastructure. The plugin bootstrap displays an **OATS loaded** startup toast
-through the OpenCode TUI host. Session data access supplies individual records;
-internal usage aggregation sums reported costs by agent name. Pricing attribution
-and reporting views remain planned. The
-descriptions below define conceptual boundaries, not a commitment to specific
-UI placements, libraries, or internal APIs. The documented supported OpenCode
+infrastructure. The plugin presents an **OATS loaded** startup toast and an
+**Agent stats** session-sidebar section through the OpenCode TUI host. Session
+data access supplies individual records; usage aggregation sums reported costs
+by agent name for the sidebar. Pricing attribution and a larger detail view
+remain planned. The descriptions below define conceptual boundaries and
+required host surfaces, not a commitment to specific libraries or internal
+APIs. The documented supported OpenCode
 host version follows the exact `@opencode/cli` pin in
 [the host package manifest](.github/tooling/opencode-host/package.json);
 compatibility with other releases is not established. An upgrade must pass
@@ -14,10 +15,20 @@ verification before support for the newly pinned release is established.
 
 ## Main Components
 
-- **`plugin-ui`**: Currently presents the startup toast. Planned reporting
-  presents a compact sidebar overview and a larger detail
-  view of session and subagent activity, identities, models, usage, rates,
-  and costs. Both views draw from the same attributed usage picture.
+- **`plugin-ui`**: Presents the startup toast and a collapsible **Agent stats**
+  section in the session sidebar. It owns presentation of scoped reported-cost
+  summaries, data status, and mouse and keyboard toggling. Expansion starts
+  enabled; the user's choice is shared across sessions for the application
+  lifetime and resets on restart. Collapsing changes visibility, not data scope
+  or freshness when reopened. The UI coordinates session-data updates with
+  on-demand aggregation rather than calculating costs itself. Display formatting
+  rounds aggregated reported-cost totals toward positive infinity to the next
+  cent, leaving exact-cent amounts unchanged, without changing underlying
+  records or aggregation. This applies to negative totals too; any positive
+  total below one cent displays as one cent. It distinguishes
+  empty history, loading, and unavailable data, preserves known partial totals,
+  and visibly identifies incomplete totals and unattributed work. A larger
+  detail view of activity, models, tokens, rates, and costs remains planned.
 - **`session-data-access`**: Supplies available historical and live individual
   usage records for the displayed session and its descendants, retaining recorded
   agent and model identities and OpenCode-reported costs. It exposes missing
@@ -51,7 +62,8 @@ verification before support for the newly pinned release is established.
 ## External Interfaces
 
 - **`opencode-tui`**: OpenCode V2's plugin host and supported UI extension
-  surfaces for presenting the overview and detail view within the terminal.
+  surfaces and interaction facilities for the sidebar, startup toast, and
+  planned detail view within the terminal.
 - **`opencode-session-data`**: OpenCode's session, message, hierarchy, status,
   and update interfaces, accessed through the plugin data facilities and
   connected OpenCode client. These supply the records behind session and
@@ -67,9 +79,9 @@ verification before support for the newly pinned release is established.
 
 ## Information Flow
 
-The bootstrap uses the TUI host to present its startup toast. Session data
-access and internal reported-cost aggregation provide the first two stages of
-the statistics flow; pricing attribution and reporting views remain planned:
+The bootstrap uses the TUI host to present its startup toast. The sidebar
+connects session data access and reported-cost aggregation to presentation;
+pricing attribution and a larger detail view remain planned:
 
 1. OpenCode supplies available historical records and live updates for the displayed
    session subtree to session data access. Records retain execution identities,
@@ -83,12 +95,19 @@ the statistics flow; pricing attribution and reporting views remain planned:
    work. A subsequent invocation reflects additions and updates in its supplied
    snapshot without retaining contributions from earlier snapshots. The supplied
    scope isolates the displayed session subtree from unrelated or previously
-   displayed sessions. No displayed session means no agent summaries. There is
-   no reactive subscription or reporting UI for this aggregation capability.
-3. Planned pricing attribution combines usage with available rates and recorded
+   displayed sessions. No displayed session means no agent summaries. The
+   aggregation component itself has no reactive subscription or UI ownership.
+3. The plugin UI requests summaries for available history when a session opens
+   and as scoped data changes, presenting one row per recorded agent name,
+   including nested delegated work and combining repeated invocations. Settled
+   usage updates the displayed costs; session switching changes the displayed
+   scope without retaining the previous session's totals. Reopening a collapsed
+   section presents current data. Status and uncertainty remain visible rather
+   than converting missing or ambiguous data into a complete zero-cost result.
+4. Planned pricing attribution combines usage with available rates and recorded
    costs to form an explanatory cost breakdown.
-4. Planned reporting UI presents the resulting overview and details, including gaps
-   or uncertainty in the underlying data.
+5. A planned larger detail view presents broader breakdowns, including gaps or
+   uncertainty in the underlying data.
 
 ## Limitations and Open Definitions
 
@@ -116,7 +135,9 @@ the statistics flow; pricing attribution and reporting views remain planned:
 - Unknown usage or cost remains distinct from a reported zero. Missing usage
   or pricing limits completeness. A zero recorded price or cost
   does not by itself establish that the provider charged nothing. OATS is not
-   a billing ledger, and derived estimates may differ from provider invoices.
+  a billing ledger. Displayed sidebar totals are rounded informational reported
+  costs, not billing-exact values, derived estimates, or billing guarantees;
+  future estimates may differ from provider invoices.
 - Reported-cost aggregation retains the known portion of an agent's total and
   identifies incompleteness when cost is missing or ambiguous. No known cost is
   not a known zero. Unknown agent identity remains unattributed rather than
@@ -127,7 +148,12 @@ the statistics flow; pricing attribution and reporting views remain planned:
   comparison is meaningful remain unresolved. This architecture assigns no
   formula or accounting scope to that term.
 - Reported-cost aggregation behavior is specified in
-  [features/usage-aggregation/](features/usage-aggregation/). Token aggregation,
-  how reporting views present incomplete records, and UI interactions remain
-  for later behavioral specifications. This document defines the project
-  boundaries, not those acceptance criteria.
+  [features/usage-aggregation/](features/usage-aggregation/). Behavioral
+  specifications in [features/](features/) define sidebar acceptance criteria
+  and interactions; this document defines conceptual boundaries rather than
+  implementation details. Token aggregation, model-price-derived estimates,
+  and larger detail-view behavior remain outside the initial sidebar milestone.
+- These boundaries and the authoritative behavioral specifications must remain
+  sufficient to regenerate the sidebar without relying on existing derived
+  implementation code. Specific UI libraries, internal APIs, and test helpers
+  are not architectural requirements.

@@ -187,7 +187,7 @@ function isExecutableFile(candidate) {
   }
 }
 
-async function supportedHostVersion(executable) {
+export async function supportedHostVersion(executable) {
   const expected = configuredHostVersion();
   if (!findExecutable(executable)) {
     throw new Error(`OpenCode executable not found: ${executable}`);
@@ -488,7 +488,7 @@ async function runInIsolatedRoot({
   return result;
 }
 
-async function cleanupSupervisor({ ipc, ptyExit, state, graceMs }) {
+export async function cleanupSupervisor({ ipc, ptyExit, state, graceMs }) {
   try {
     await performSupervisorCleanup({ ipc, ptyExit, state, graceMs });
   } catch (error) {
@@ -677,13 +677,13 @@ function createIpc(socket) {
   };
 }
 
-async function spawnRealPty(file, args, options) {
+export async function spawnRealPty(file, args, options) {
   const nodePty = await import("node-pty");
   const pty = nodePty.default ?? nodePty;
   return pty.spawn(file, args, options);
 }
 
-function isolatedEnvironment(root, configuredPlugins) {
+export function isolatedEnvironment(root, configuredPlugins) {
   return {
     PATH: process.env.PATH ?? "/bin:/usr/bin",
     LC_ALL: "C.UTF-8",
@@ -752,7 +752,7 @@ function boundedGrace(value) {
   return Math.min(Math.max(requested, 0), SUPERVISOR_MAX_GRACE_MS);
 }
 
-function deferred() {
+export function deferred() {
   let resolve;
   const promise = new Promise((settle) => {
     resolve = settle;
@@ -760,7 +760,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function withTimeout(promise, timeoutMs, message) {
+export function withTimeout(promise, timeoutMs, message) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(message)), timeoutMs);

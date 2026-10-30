@@ -3,10 +3,10 @@
 // checked-in workflow is mutated, and scheduling/linting fail closed.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import test from 'node:test'
 import * as ci from '../steps/workflow_helper.js'
 
@@ -30,7 +30,10 @@ function prepareRepository(t, mutateWorkflow = workflow => workflow) {
   cpSync(join(root, 'features/tests'), join(dir, 'features/tests'), { recursive: true })
   // The imported support graph statically imports application modules, so the
   // disposable checkout needs its own copy rather than the real checkout.
+  // Root tui.js is the package's public entrypoint; acceptance steps import it
+  // directly, so it must be present alongside src.
   cpSync(join(root, 'src'), join(dir, 'src'), { recursive: true })
+  cpSync(join(root, 'tui.js'), join(dir, 'tui.js'))
   for (const feature of [FAILURE_FEATURE, SKIPPED_FEATURE, SCHEDULING_FEATURE]) {
     mkdirSync(dirname(join(dir, feature)), { recursive: true })
     cpSync(join(root, feature), join(dir, feature))
@@ -77,6 +80,14 @@ function assertScenarioFails(run, message) {
   assert(failures.length > 0, 'Expected a failing step')
   assert.match(failures.join('\n'), message)
 }
+
+test('the disposable checkout exposes the package root TUI entrypoint', async t => {
+  const dir = prepareRepository(t)
+  const entry = join(dir, 'tui.js')
+  assert.equal(lstatSync(entry).isSymbolicLink(), false, 'tui.js must be a sandbox copy')
+  const { default: plugin } = await import(pathToFileURL(entry).href)
+  assert.equal(typeof plugin.setup, 'function')
+})
 
 test('unmutated checked-in workflow passes the gate and scheduling scenarios end to end', t => {
   const dir = prepareRepository(t)
