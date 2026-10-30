@@ -4,12 +4,10 @@ OATS is a minimal OpenCode v2 TUI plugin, intended to help explain token usage
 and estimated costs across agents, subagents, and models.
 
 **Current behavior:** a brief **OATS loaded** startup toast confirms that the
-plugin loaded. Session data access supplies available historical and live
-individual records for the displayed session and its descendants. Internal
-on-demand aggregation is available to summarize OpenCode-reported costs by
-recorded agent name, but the plugin does not currently invoke it. There is no
-reporting UI. Aggregated token statistics, derived cost estimates, and reporting
-views remain planned.
+plugin loaded. The collapsible **Agent stats** session-sidebar section shows
+known OpenCode-reported costs by recorded agent name for the displayed session
+and its descendants. Aggregated token statistics, model-price-derived estimates,
+and a larger detail view remain planned.
 
 ## Try the local plugin
 
@@ -72,6 +70,76 @@ There is no project-local `cli.json`. See the official V2
 [CLI plugin configuration](https://opencode.ai/v2/docs/cli/plugins) and
 [TUI plugin API](https://opencode.ai/v2/docs/build/plugins/cli).
 
+### Try Agent stats
+
+1. Open a session with available history and show the session sidebar.
+2. Find **Agent stats**, which starts expanded. Each named agent has one row
+   showing its total known reported cost, including nested delegated work.
+   Repeated invocations of the same agent are combined, even across models.
+3. Click the **Agent stats** heading to collapse or expand its contents. For
+   keyboard interaction, open OpenCode's command palette and select
+   **Toggle Agent stats**.
+4. Switch sessions to see costs for the newly displayed session subtree. The
+   expansion choice is shared across sessions for this application lifetime;
+   restarting the application defaults to expanded again.
+
+Available history appears when the session opens, and costs update as OpenCode
+settles usage at step boundaries, not for every streamed token. Collapsing the
+section does not leave stale data when it is reopened. Unrelated sessions and
+the previously displayed session subtree are not included in the new scope.
+
+The display distinguishes confirmed empty history from loading or unavailable
+data. If history may be missing, an empty result is reported as incomplete,
+not as confirmed empty. OpenCode 2.0.32 generally cannot establish a complete
+historical event log, including for a session with no available records.
+Partial results retain known costs and identify incompleteness; missing or
+ambiguous costs are not shown as complete zero-cost totals. Work without a
+recorded agent name is identified as unattributed rather than silently dropped
+or assigned to another agent. A complete-looking agent row does not establish
+complete history when the overall summary indicates missing data.
+When the full word won't fit, the sidebar may show `(!)` next to an incomplete
+amount, with the legend `! = incomplete total`.
+Long or unsafe agent names are displayed as bounded inert text. If displayed
+names would collide, numbered suffixes distinguish their rows; aggregation
+continues to use the original recorded names.
+
+**Reported costs only:** these values are informational OpenCode-reported
+costs, not estimates derived from token rates or billing guarantees. A reported
+zero does not prove that the provider charged nothing. Missing history and
+uncertain provenance can limit totals; see [Session data access](#session-data-access).
+Reported numeric costs are added with accurate decimal arithmetic before
+display rounding: `$0.10 + $0.20` displays as `$0.30`, not `$0.31` from a binary
+floating-point addition artifact. For each finite normalized host `Number`,
+the exact decimal value used is its shortest round-trip decimal representation
+(the shortest decimal text that converts back to the same `Number`). This does
+not preserve the original JSON or provider decimal text and cannot recover
+precision already lost by the provider or host.
+Displayed totals are rounded up toward positive infinity to the next cent;
+amounts already at an exact cent remain unchanged. Any positive amount below
+one cent displays as `$0.01`. For example, `$1.231` displays as `$1.24`.
+Negative amounts also round toward positive infinity: `-$0.011` displays as
+`$-0.01`, not `$-0.02`. This is display rounding of the aggregated total, not
+rounding of individual records or billing-exact accounting.
+The maximum displayable magnitude is `$9999.99`. Rounded totals above that
+range display as `>$9999.99`; those below `-$9999.99` display as `<-$9999.99`,
+rather than an exact clipped cap. The completeness marker is preserved even
+when a total is outside the display range.
+Token breakdowns, model-price-derived estimates, a larger detail view, and
+base-versus-total comparisons are outside this initial sidebar experience.
+
+### Host-provided UI runtime
+
+The supported host supplies the shared Solid and OpenTUI runtime used by the
+plugin. OATS does not install OpenTUI as a production dependency. Installing a
+packed OATS package in a fresh npm consumer was verified against the pinned
+2.0.32 TUI, including rendering and the palette toggle; `npm audit --omit=dev`
+reported no vulnerabilities for that consumer dependency tree. This does not
+audit the host executable or establish compatibility with other host releases.
+The OpenTUI packages in this checkout are development-only test dependencies;
+their Solid peer is overridden locally and that override does not apply to
+npm consumers. Do not install OpenTUI 0.5.17 as a consumer dependency merely
+to load OATS: its strict Solid peer can pull an affected older release.
+
 ## Session data access
 
 Session data access retains each record's recorded agent and model identities,
@@ -119,7 +187,8 @@ unset agent flag therefore does not guarantee that all of the agent's work is
 present when the overall summary is incomplete.
 
 Aggregation runs on demand from each latest scoped session-data snapshot; it
-does not subscribe to updates or maintain reactive summaries. Invoking it again
+does not itself subscribe to updates or maintain reactive summaries. The sidebar
+requests summaries as its scoped data changes. Invoking aggregation again
 with the latest snapshot reflects record additions and updates without duplicate
 contributions or retained contributions from earlier snapshots. The supplied
 scope covers the displayed session subtree, excluding unrelated sessions and
@@ -128,15 +197,16 @@ the previously displayed subtree. No displayed session means no agent summaries.
 For internal consumers, `createUsageAggregation(sessionData).getSummary()` reads
 the latest snapshot on each call; this facade is not a public package API.
 
-This is an internal capability, not a visible reporting view. It sums reported
-costs, not estimates derived from token rates, and does not guarantee billing
-accuracy. A reported zero does not prove that the provider charged nothing.
+The sidebar uses this internal capability to sum reported costs, not estimates
+derived from token rates. It does not guarantee billing accuracy. A reported
+zero does not prove that the provider charged nothing.
 
 ## Planned experience
 
-- A compact sidebar overview of token usage and estimated costs.
+- Token usage and model-price-derived estimates in the sidebar.
 - An expanded view with token and estimated-cost breakdowns per agent and
   subagent, and per model.
+- Base-versus-total cost comparisons, once their meaning is defined.
 
 Usage reporting and cost estimates will depend on the data available from
 OpenCode and model providers. Estimates are informational, not billing
@@ -154,8 +224,9 @@ The project uses an agent-assisted, specification-driven workflow:
 4. Implement behavior against those specifications, then verify and audit it.
 
 Feature specifications follow the conventions in
-[features/AGENTS.md](features/AGENTS.md). The reporting experience above remains
-planned; the startup toast remains the current visible bootstrap behavior.
+[features/AGENTS.md](features/AGENTS.md). The sidebar is the initial reported-cost
+view; the broader reporting experience under Planned experience remains future
+work.
 
 ## Development and verification
 
@@ -193,6 +264,16 @@ below; the unit suite requires the lint tools as well as Bash on `PATH`:
 ```bash
 npm run test:unit
 ```
+
+Sidebar UI unit tests render the real plugin with OpenTUI, so they need Node 26
+with Solid client conditions and the `--experimental-ffi` flag. They self-skip
+inside the portable unit command. CI runs them as a required no-skip step:
+
+```bash
+OATS_REQUIRE_SIDEBAR_UI=1 npm run test:unit:sidebar-ui
+```
+
+Use the Node version in [`.nvmrc`](.nvmrc); the repository pin is 26.13.0.
 
 Run the reported-cost aggregation acceptance scenarios without launching
 OpenCode:
@@ -232,13 +313,13 @@ described for the TUI smoke harness below. These controls do not guarantee
 network isolation or offline operation. The contract test does not launch a
 TUI or require a pseudo-terminal.
 
-Run the real-host TUI smoke scenarios:
+Run the plugin UI scenarios, including the real-host TUI smoke scenarios:
 
 ```bash
 npm run test:features -- --tags '@component:plugin-ui'
 ```
 
-These scenarios require a POSIX host with pseudo-terminal and Unix-domain socket
+The real-host scenarios require a POSIX host with pseudo-terminal and Unix-domain socket
 support, plus an OpenCode executable matching the exact host pin on `PATH`.
 Process inspection requires `/proc` on Linux or `ps` on other supported POSIX
 hosts. Windows is unsupported. Set

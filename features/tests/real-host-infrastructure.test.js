@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { requireRealHost } from '../real-host-tests/prerequisites.js'
+import { REQUIRED_REAL_HOST_SUITES, SIDEBAR_SUITE } from '../real-host-tests/required-suites.js'
 import { configuredHostVersion } from '../steps/host_pin_helper.js'
 
 const PIN = configuredHostVersion()
@@ -53,6 +54,22 @@ test('system configuration and uninspectable sources fail instead of skipping', 
   writeFileSync(file, '')
   assert.throws(() => requireRealHost(host, { sources: [join(file, 'child')], platform: 'linux' }), /Cannot inspect OpenCode/)
   assert.throws(() => requireRealHost(host, { sources: [], platform: 'win32' }), /POSIX/)
+})
+
+test('the real-host gate includes the sidebar contract with coordinated names', () => {
+  assert.deepEqual(
+    REQUIRED_REAL_HOST_SUITES.map(suite => suite.file),
+    ['session-data-access.real-host.test.js', 'plugin-sidebar.real-host.test.js'],
+  )
+  assert.equal(
+    SIDEBAR_SUITE.name,
+    'the real pinned OpenCode TUI renders and toggles the actual OATS Agent stats sidebar',
+  )
+  assert.equal(new Set(REQUIRED_REAL_HOST_SUITES.map(suite => suite.file)).size, 2)
+  const gate = readFileSync(new URL('../real-host-tests/run.js', import.meta.url), 'utf8')
+  assert.match(gate, /REQUIRED_REAL_HOST_SUITES/)
+  const focused = readFileSync(new URL('../real-host-tests/run-sidebar.js', import.meta.url), 'utf8')
+  assert.match(focused, /SIDEBAR_SUITE/)
 })
 
 test('the unit test glob excludes the real-host contract', () => {

@@ -1,5 +1,10 @@
 import { fileURLToPath } from 'node:url'
+import { REQUIRED_REAL_HOST_SUITES } from './required-suites.js'
 import { runRequiredTestFile } from './required-test-runner.js'
 
-const file = fileURLToPath(new URL('./session-data-access.real-host.test.js', import.meta.url))
-if (!await runRequiredTestFile(file, 'session data access follows the pinned OpenCode session tree')) process.exitCode = 1
+let passed = true
+for (const suite of REQUIRED_REAL_HOST_SUITES) {
+  const file = fileURLToPath(new URL(`./${suite.file}`, import.meta.url))
+  if (!await runRequiredTestFile(file, suite.name)) passed = false
+}
+if (!passed) process.exitCode = 1

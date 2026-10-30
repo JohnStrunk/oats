@@ -96,4 +96,7 @@ export async function populateDiscoverySandbox(dir, root) {
   rmSync(join(dir, 'features'), { recursive: true, force: true })
   cpSync(join(root, 'features'), join(dir, 'features'), { recursive: true })
   cpSync(join(root, 'src'), join(dir, 'src'), { recursive: true })
+  // The root tui.js is the package's public entrypoint; acceptance steps import
+  // it directly so the sandbox must expose the same entrypoint as a copy.
+  copyFileSync(join(root, 'tui.js'), join(dir, 'tui.js'))
 }

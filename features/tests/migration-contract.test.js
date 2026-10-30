@@ -90,7 +90,7 @@ for (const component of ['plugin-ui', 'repo-infrastructure', 'session-data-acces
 test('discovery sandbox copies the current component and support without linking the checkout', async t => {
   const dir = temp(t)
   await populateDiscoverySandbox(dir, root)
-  for (const path of ['src/session-data-access.js', 'features/steps/regression_session_helper.js']) {
+  for (const path of ['src/session-data-access.js', 'tui.js', 'features/steps/regression_session_helper.js']) {
     const source = join(root, path)
     const copy = join(dir, path)
     assert.equal(lstatSync(copy).isSymbolicLink(), false, `${path} must be a sandbox copy`)
