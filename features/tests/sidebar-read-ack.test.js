@@ -10,7 +10,7 @@ test('an old collapsed screen and old read cannot acknowledge the new session', 
   const root = await createSidebarTemp('sidebar-read-ack-')
   const control = path.join(root, 'control.json')
   try {
-    assert.equal(collapsedWithoutContent(' ▸ Agent stats\n\n'), true)
+    assert.equal(collapsedWithoutContent(' ▶ Agent stats\n\n'), true)
     await writeFile(`${control}.read`, 'ses_old')
     await assert.rejects(waitForSidebarReadAck(control, 'ses_new', { timeoutMs: 20, pollMs: 1 }), /ses_new.*did not start/)
     await resetSidebarReadAck(control)

@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { agentStatsLines, formatCost } from '../../src/agent-stats.js'
+import {
+  MAX_HOST_CONTENT_WIDTH,
+  costRows,
+  legendCount,
+  rowFor,
+  rowsShareValueEnd,
+} from './agent-stats-display-oracle.js'
 
 const snapshot = (records = [], fields = {}) => ({
   sessionID: 'root', complete: true, records, errors: [], gaps: [], ...fields,
@@ -25,7 +32,7 @@ test('decimal totals are summed exactly before rounding once', () => {
     [[-0.1, -0.2], '$-0.30'], [[0.3, -0.2], '$0.10'],
   ]) {
     const lines = agentStatsLines(snapshot(costs.map(cost => ({ agent: 'a', cost }))), 'root')
-    assert.ok(lines.includes(`a: ${expected}`), `${costs} produced ${lines}`)
+    assert.equal(rowFor(lines, 'a').value, expected, `${costs} produced ${lines}`)
   }
 })
 
@@ -35,25 +42,32 @@ test('overflow and partial totals stay distinguishable in the sidebar', () => {
     { agent: null, cost: -1e308 }, { agent: null, cost: null },
   ]
   const lines = agentStatsLines(snapshot(records, { complete: false }), 'root')
-  const row = lines.find(line => line.includes('>$9999.99'))
-  const bucket = lines.find(line => line.includes('<-$9999.99'))
-  assert.ok(row?.includes('(incomplete)'))
-  assert.ok(bucket?.startsWith('Unattributed:') && bucket.includes('(!)'))
-  assert.ok(lines.includes('! = incomplete total'))
-  assert.ok(Array.from(row).length <= 30)
-  assert.ok(Array.from(bucket).length <= 30)
+  const row = rowFor(lines, 'abcdefghijklmnop')
+  const bucket = rowFor(lines, 'Unattributed')
+
+  assert.equal(row.value, '>$9999.99')
+  assert.equal(row.marker, 'e')
+  assert.equal(bucket.value, '<-$9999.99')
+  assert.equal(bucket.marker, 'e')
+  assert.equal(legendCount(lines), 1)
+  assert.ok(rowsShareValueEnd(costRows(lines)))
+  assert.ok(row.width <= MAX_HOST_CONTENT_WIDTH)
+  assert.ok(bucket.width <= MAX_HOST_CONTENT_WIDTH)
   assert.ok(lines.includes('Summary incomplete'))
 })
 
 test('zero-width marks cannot spoof a label or the unattributed bucket', () => {
   const agents = ['Unattributed', 'Unattributed\uFE0F', 'Unattributed\u034F', 'worker', 'worker\uFE0F', 'worker\u034F', 'worker�']
-  const rows = agentStatsLines(snapshot([...agents.map((agent, i) => ({ agent, cost: i + 1 })), { agent: null, cost: 8 }]), 'root')
-    .filter(line => line.includes(': $'))
-  const labels = rows.map(line => line.slice(0, line.indexOf(': $')))
+  const lines = agentStatsLines(
+    snapshot([...agents.map((agent, i) => ({ agent, cost: i + 1 })), { agent: null, cost: 8 }]),
+    'root',
+  )
+  const labels = costRows(lines).map((row) => row.label)
+
   assert.equal(labels.length, agents.length + 1)
   assert.equal(new Set(labels).size, labels.length)
-  assert.ok(rows.includes('Unattributed: $8.00'))
-  assert.ok(labels.every(label => !/[\p{M}\p{Default_Ignorable_Code_Point}]/u.test(label)))
+  assert.equal(rowFor(lines, 'Unattributed').value, '$8.00')
+  assert.ok(labels.every((label) => !/[\p{M}\p{Default_Ignorable_Code_Point}]/u.test(label)))
 })
 
 test('thousands of colliding display names resolve in near-linear time', { timeout: 7000 }, () => {
@@ -61,8 +75,12 @@ test('thousands of colliding display names resolve in near-linear time', { timeo
   const start = performance.now()
   const lines = agentStatsLines(snapshot(records), 'root')
   const elapsed = performance.now() - start
-  assert.equal(lines.length, records.length)
-  assert.equal(new Set(lines).size, records.length)
+  const rows = costRows(lines)
+  assert.equal(rows.length, records.length)
+  assert.equal(new Set(rows.map((row) => row.label)).size, records.length)
+  assert.ok(rowsShareValueEnd(rows))
+  assert.ok(rows.every((row) => row.width <= MAX_HOST_CONTENT_WIDTH))
+  assert.equal(legendCount(lines), 0)
   assert.ok(elapsed < 5000, `collision resolution took ${elapsed.toFixed(0)} ms`)
 })
 

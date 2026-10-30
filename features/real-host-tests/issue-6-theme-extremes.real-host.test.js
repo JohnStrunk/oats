@@ -52,11 +52,12 @@ test('pinned host displays bounded extreme costs and complete partial markers', 
     const tui = world.sidebarPty
     const frame = await tui.waitFor(screen => {
       const lines = screen.split('\n')
-      return lines.some(line => line.includes('$0.01') && line.includes('(incomplete)')) &&
-        lines.some(line => line.includes('>$9999.99') && line.includes('(incomplete)')) && screen
+      return lines.some(line => line.includes('$0.01e')) &&
+        lines.some(line => line.includes('>$9999.99e')) &&
+        lines.some(line => line.trim() === 'e = incomplete total') && screen
     })
-    assert.match(frame, /tiny[^\n]*\$0\.01[^\n]*\(incomplete\)/)
-    assert.match(frame, /abc[^\n]*>\$9999\.99[^\n]*\(incomplete\)/)
+    assert.match(frame, /tiny[^\n]*\$0\.01e(?=\s|$)/)
+    assert.match(frame, /abc[^\n]*>\$9999\.99e(?=\s|$)/)
     const theme = JSON.parse(await readFile(themePath, 'utf8'))
     assert.ok(theme.base && theme.muted, 'real host supplies nested base and muted text colors')
     assert.notDeepEqual(theme.base, theme.muted)
@@ -79,7 +80,7 @@ test('pinned host displays bounded extreme costs and complete partial markers', 
     }
     const rgb = color => [color.buffer[0], color.buffer[1], color.buffer[2]]
     assert.deepEqual(foregroundBefore('Agent stats'), rgb(theme.base), 'heading uses host base text color')
-    assert.deepEqual(foregroundBefore('tiny:'), rgb(theme.muted), 'rows use host muted text color')
+    assert.deepEqual(foregroundBefore('tiny'), rgb(theme.muted), 'rows use host muted text color')
   } catch (error) {
     // Preserve the primary failure while still reporting an unconfirmed close;
     // stopSidebar keeps the PTY handle and the adapter/control tree in that case.

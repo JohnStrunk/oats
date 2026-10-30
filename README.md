@@ -76,9 +76,11 @@ There is no project-local `cli.json`. See the official V2
 2. Find **Agent stats**, which starts expanded. Each named agent has one row
    showing its total known reported cost, including nested delegated work.
    Repeated invocations of the same agent are combined, even across models.
+   Costs are right-aligned in a shared column.
 3. Click the **Agent stats** heading to collapse or expand its contents. For
    keyboard interaction, open OpenCode's command palette and select
-   **Toggle Agent stats**.
+   **Toggle Agent stats**. The heading uses the host's disclosure indicators:
+   `▼` when expanded and `▶` when collapsed.
 4. Switch sessions to see costs for the newly displayed session subtree. The
    expansion choice is shared across sessions for this application lifetime;
    restarting the application defaults to expanded again.
@@ -97,8 +99,10 @@ ambiguous costs are not shown as complete zero-cost totals. Work without a
 recorded agent name is identified as unattributed rather than silently dropped
 or assigned to another agent. A complete-looking agent row does not establish
 complete history when the overall summary indicates missing data.
-When the full word won't fit, the sidebar may show `(!)` next to an incomplete
-amount, with the legend `! = incomplete total`.
+Known incomplete totals carry an `e` suffix, with the legend
+`e = incomplete total`. Unknown totals display as `unavailable`, without an
+`e` suffix. **Unattributed** rows use the same alignment and completeness
+formatting as named-agent rows.
 Long or unsafe agent names are displayed as bounded inert text. If displayed
 names would collide, numbered suffixes distinguish their rows; aggregation
 continues to use the original recorded names.
