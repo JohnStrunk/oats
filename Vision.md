@@ -5,7 +5,7 @@ users who want to understand token usage and cost across a session and its
 subagents while work is happening. Its goal is to make delegated work visible
 without leaving the terminal or piecing together separate session records.
 
-The initial reporting experience is a collapsible **Agent stats** section in
+The reporting experience includes a collapsible **Agent stats** section in
 the session sidebar, alongside the **OATS loaded** startup toast. It shows known
 OpenCode-reported costs by recorded agent name across the displayed session and
 nested delegated work, combining repeated invocations. Incomplete totals and
@@ -18,18 +18,27 @@ not persisted across restarts. Available history appears when a session opens,
 and settled usage and session changes keep the display current, including when
 the section is reopened after being collapsed.
 
-The broader intended experience combines the compact sidebar overview with a
-larger detail view. Token breakdowns, the larger view, model-price-derived
-estimates, and base-versus-total comparisons remain outside the initial sidebar
-milestone. Together, the broader views will connect agent and subagent names to
-the models actually used, showing input, output, cache-read, cache-write, and
-total tokens, applicable prices per million tokens, and per-dimension and
-total costs. Base-versus-total cost comparisons are an aim where meaningful;
-the meaning of base cost remains to be defined.
+The sidebar's **(details)** link opens a scrollable usage-details modal for the
+same session and nested delegated work. It groups repeated usage by recorded
+agent and provider/model identity, rather than the currently selected model,
+and follows session changes and settled usage. Each group pairs its
+OpenCode-reported cost total with input, output, cache-write, and cache-read
+token counts, current prices per million tokens, and estimated category costs.
+Reported totals remain distinct from estimates based on current rates, which
+need not reflect historical charges. Estimates and incomplete values are
+identified with an **e**; known partial values remain visible and unknown values
+are not shown as zero.
+
+Token categories follow the host's reporting semantics: input excludes cached
+tokens, and output-rate usage includes visible output and reasoning. Estimates
+require known usage and a single applicable current untiered rate; missing or
+ambiguous pricing, including unsupported tiered pricing, remains unknown rather
+than implying free usage. Base-versus-total cost comparisons remain a future
+aim where meaningful; the meaning of base cost remains to be defined.
 
 The initial sidebar sums reported costs; it does not derive cost estimates.
 These values are informational, not billing guarantees. OATS aims for useful,
-transparent reporting and, later, estimates, not billing-accurate accounting.
+transparent reporting and estimates, not billing-accurate accounting.
 Live visibility follows OpenCode's per-step usage settlement rather than a
 per-token meter. Provider reporting, cache and reasoning accounting, and
 missing or zero pricing can limit what is known; those limits are part of the

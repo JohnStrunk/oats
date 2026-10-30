@@ -69,6 +69,15 @@ export default {
       get(target, key) {
         if (key === 'on') return on
         if (key === 'listen') return listen
+        if (key === 'location' && control.models) return new Proxy(target.location, {
+          get(location, name) {
+            if (name === 'model') return {
+              list: () => structuredClone(control.models),
+              sync: async () => {}, invalidate: () => {},
+            }
+            return Reflect.get(location, name, location)
+          },
+        })
         return Reflect.get(target, key, target)
       },
     })
@@ -120,6 +129,9 @@ export default {
       get(target, key) {
         if (key === 'session') return session
         if (key === 'message') return message
+        if (key === 'model' && control.models) return {
+          list: async () => ({ location: { directory: '.' }, data: structuredClone(control.models) }),
+        }
         return Reflect.get(target, key, target)
       },
     })

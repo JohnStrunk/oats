@@ -6,10 +6,10 @@ Feature: While a session is displayed, the plugin UI shall present an Agent stat
     When the actual OATS TUI plugin is loaded by the sidebar host
     Then the plugin shall contribute to a session sidebar slot
 
-  Scenario: The section is titled exactly Agent stats
+  Scenario: The section title includes the details link
     Given the Agent stats host fixture "history"
     When the Agent stats session is displayed
-    Then the sidebar shall contain the section title "Agent stats"
+    Then the sidebar shall contain the section title "Agent stats (details)"
 
   Scenario: A session without the OATS plugin has no Agent stats section
     Given an Agent stats session without the OATS plugin

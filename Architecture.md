@@ -3,9 +3,9 @@
 This document covers the OATS OpenCode V2 TUI plugin and the existing repository
 infrastructure. The plugin presents an **OATS loaded** startup toast and an
 **Agent stats** session-sidebar section through the OpenCode TUI host. Session
-data access supplies individual records; usage aggregation sums reported costs
-by agent name for the sidebar. Pricing attribution and a larger detail view
-remain planned. The descriptions below define conceptual boundaries and
+data access supplies individual records; usage aggregation summarizes reported
+costs and usage. Pricing attribution and a detail view explain usage by agent
+and model. The descriptions below define conceptual boundaries and
 required host surfaces, not a commitment to specific libraries or internal
 APIs. The documented supported OpenCode
 host version follows the exact `@opencode/cli` pin in
@@ -27,8 +27,9 @@ verification before support for the newly pinned release is established.
   records or aggregation. This applies to negative totals too; any positive
   total below one cent displays as one cent. It distinguishes
   empty history, loading, and unavailable data, preserves known partial totals,
-  and visibly identifies incomplete totals and unattributed work. A larger
-  detail view of activity, models, tokens, rates, and costs remains planned.
+  and visibly identifies incomplete totals and unattributed work. The details
+  modal presents usage by agent/model, current rates, estimated category costs,
+  reported costs, and uncertainty.
 - **`session-data-access`**: Supplies available historical and live individual
   usage records for the displayed session and its descendants, retaining recorded
   agent and model identities and OpenCode-reported costs. It exposes missing
@@ -49,12 +50,11 @@ verification before support for the newly pinned release is established.
   tree totals again. Summaries distinguish known totals from incomplete data
   and preserve work with unknown identity as unattributed. This capability does
   not present a UI, derive pricing estimates, or establish billing accuracy.
-  Token aggregation and broader session and model breakdowns remain planned;
-  token totals will require reconciling provider-reported input, output,
-  cache-read, cache-write, and reasoning semantics.
-- **`pricing-attribution`** (planned): Associates usage with the applicable model and
-  provider pricing, expressed as rates per million tokens. It relates
-  per-dimension and total cost estimates to OpenCode-reported costs while
+  It also summarizes usage by recorded agent and provider/model for the details
+  view, preserving missing identities, usage, and reported-cost uncertainty.
+- **`pricing-attribution`**: Associates usage with current model and provider
+  pricing, expressed as rates per million tokens. It relates
+  per-dimension cost estimates to OpenCode-reported costs while
   preserving distinctions between reported values, derived estimates, and
   unavailable pricing.
 - **`repo-infrastructure`**: Repository automation, continuous integration workflows, automated dependency maintenance, verification pipelines, code quality linters, and merge gate coordination.
@@ -63,7 +63,7 @@ verification before support for the newly pinned release is established.
 
 - **`opencode-tui`**: OpenCode V2's plugin host and supported UI extension
   surfaces and interaction facilities for the sidebar, startup toast, and
-  planned detail view within the terminal.
+  detail view within the terminal.
 - **`opencode-session-data`**: OpenCode's session, message, hierarchy, status,
   and update interfaces, accessed through the plugin data facilities and
   connected OpenCode client. These supply the records behind session and
@@ -81,7 +81,7 @@ verification before support for the newly pinned release is established.
 
 The bootstrap uses the TUI host to present its startup toast. The sidebar
 connects session data access and reported-cost aggregation to presentation;
-pricing attribution and a larger detail view remain planned:
+the details view uses the same session scope and current model pricing:
 
 1. OpenCode supplies available historical records and live updates for the displayed
    session subtree to session data access. Records retain execution identities,
@@ -104,10 +104,10 @@ pricing attribution and a larger detail view remain planned:
    scope without retaining the previous session's totals. Reopening a collapsed
    section presents current data. Status and uncertainty remain visible rather
    than converting missing or ambiguous data into a complete zero-cost result.
-4. Planned pricing attribution combines usage with available rates and recorded
-   costs to form an explanatory cost breakdown.
-5. A planned larger detail view presents broader breakdowns, including gaps or
-   uncertainty in the underlying data.
+4. Pricing attribution combines usage with available current rates to form an
+   estimated breakdown, distinct from recorded costs.
+5. The details view presents these breakdowns, including gaps and uncertainty,
+   and follows the displayed session and settled-usage updates.
 
 ## Limitations and Open Definitions
 
@@ -137,7 +137,7 @@ pricing attribution and a larger detail view remain planned:
   does not by itself establish that the provider charged nothing. OATS is not
   a billing ledger. Displayed sidebar totals are rounded informational reported
   costs, not billing-exact values, derived estimates, or billing guarantees;
-  future estimates may differ from provider invoices.
+  current-price estimates may differ from provider invoices.
 - Reported-cost aggregation retains the known portion of an agent's total and
   identifies incompleteness when cost is missing or ambiguous. No known cost is
   not a known zero. Unknown agent identity remains unattributed rather than
@@ -152,7 +152,7 @@ pricing attribution and a larger detail view remain planned:
   specifications in [features/](features/) define sidebar acceptance criteria
   and interactions; this document defines conceptual boundaries rather than
   implementation details. Token aggregation, model-price-derived estimates,
-  and larger detail-view behavior remain outside the initial sidebar milestone.
+  and detail-view behavior are specified separately from the sidebar milestone.
 - These boundaries and the authoritative behavioral specifications must remain
   sufficient to regenerate the sidebar without relying on existing derived
   implementation code. Specific UI libraries, internal APIs, and test helpers
