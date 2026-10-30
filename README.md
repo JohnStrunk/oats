@@ -15,13 +15,16 @@ views remain planned.
 
 Prerequisites:
 
-- OpenCode **v2.0.32**, the pinned host version;
-  compatibility with other releases is not established.
+- OpenCode at the exact `@opencode/cli` version pinned in
+  [the host package manifest](.github/tooling/opencode-host/package.json).
+  The documented supported host version follows this pin; compatibility with
+  other releases is not established. A pin update must pass verification before
+  support for the new release is established.
 - Node.js and npm for checkout development and verification. The exact Node.js
   release is specified in `.nvmrc` and CI, which pin the same version.
   Local verification with `npm test` has passed on Node.js **26.13.0**. For
   Node.js 22, the locked dependency tree requires **22.19.0 or later**, including
-  a production transitive dependency of `@opencode/plugin@2.1.0`; it is not
+  a production transitive dependency of `@opencode/plugin`; it is not
   solely a test dependency requirement. The Cucumber.js test runner declares
   support for Node.js **22, 24, or 26 and later** (not 23 or 25); this declared
   range does not establish verification of every version in it. The root package
@@ -91,7 +94,8 @@ recovery allows attribution; it is not treated as proof that a session is not
 a fork. Partial loading failures preserve attributable records and indicate
 incompleteness; refresh retries unavailable data where the host can supply it.
 
-OpenCode v2.0.32 typically does not persist historical events. Some event-only
+OpenCode v2.0.32 typically does not persist historical events; this observation
+is version-specific, not established for later releases. Some event-only
 usage and retry attempts may be unreconstructible once those events are lost,
 so available records are not a guarantee of complete history. Refresh cannot
 recover data the host no longer has.
@@ -160,8 +164,17 @@ needed to load the local checkout. Run `npm ci` after dependency changes.
 
 The package exports `./tui` as `src/tui.js`. A root-level `tui.js` forwards to
 that entrypoint because the v2.0.32 host's local-directory resolver needs the
-root file even with the package export present. Keep this shim when changing
-the plugin entrypoint.
+root file even with the package export present. This is a version-specific
+observation, not a verified limitation of later releases. Keep this shim when
+changing the plugin entrypoint.
+
+Host tests derive their expected executable version from the exact
+`@opencode/cli` pin in `.github/tooling/opencode-host/package.json`, rather than
+maintaining separate version literals. The corresponding lockfile supplies the
+reproducible installation. Both the TUI smoke harness and the session-data
+contract test require an exact version match; an arbitrary V2 release is not
+accepted. Updating the pin does not demonstrate compatibility or preservation
+of isolation controls: the upgrade must pass the tests.
 
 Acceptance tests use Cucumber.js with JavaScript ES modules; unit tests use
 Node.js's built-in test runner. Install the locked dependencies with
@@ -194,7 +207,7 @@ invariants, including property-based coverage.
 
 The unit suite does not launch a real OpenCode host. The separate
 [`session-data-access.real-host.test.js`](features/real-host-tests/session-data-access.real-host.test.js)
-launches a real OpenCode **v2.0.32** server. It checks the
+launches a real OpenCode server at the pinned host version. It checks the
 HTTP/SDK contract and session data access using imported synthetic sessions
 and messages, without model calls. Live settlement and event deduplication
 remain covered by fake-host tests, not this real-host contract test.
@@ -226,9 +239,9 @@ npm run test:features -- --tags '@component:plugin-ui'
 ```
 
 These scenarios require a POSIX host with pseudo-terminal and Unix-domain socket
-support, plus an OpenCode **v2.0.32** executable on `PATH`. Process inspection
-requires `/proc` on Linux or `ps` on other supported POSIX hosts. Windows is
-unsupported. Set
+support, plus an OpenCode executable matching the exact host pin on `PATH`.
+Process inspection requires `/proc` on Linux or `ps` on other supported POSIX
+hosts. Windows is unsupported. Set
 `OATS_OPENCODE=/absolute/path/to/opencode` to select that host explicitly.
 The harness starts a real standalone TUI with temporary home and XDG
 directories and a minimal child environment. It checks for the rendered
@@ -239,10 +252,12 @@ Cleanup covers only the supervisor's process group. Descendants can escape into
 other process groups or sessions; supervisor failure may leave cleanup
 unconfirmed. The harness does not guarantee termination of every descendant.
 
-For v2.0.32, the harness sets `OPENCODE_DISABLE_PROJECT_CONFIG=1`,
+The harness sets `OPENCODE_DISABLE_PROJECT_CONFIG=1`,
 `OPENCODE_DISABLE_AUTOUPDATE=1`, and `OPENCODE_DISABLE_MODELS_FETCH=1` to
 suppress project and ancestor configuration discovery, automatic updates, and
-model metadata fetching. System configuration is independent of these controls,
+model metadata fetching. These controls were established for v2.0.32; their
+effectiveness must be verified when upgrading the host, not assumed for later
+releases. System configuration is independent of these controls,
 so the harness refuses to run if a system configuration source exists or cannot
 be inspected: `/etc/opencode` on non-macOS hosts, or the OpenCode system and
 managed-preference locations on macOS. Use a host without those sources rather

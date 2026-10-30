@@ -325,7 +325,7 @@ function assertSnapshotScope(snapshot, sessionID, expectedKeys) {
   assert.ok(snapshot.records.every(record => typeof record.id === 'string' && record.id.length > 0))
 }
 
-test('session data access follows a real OpenCode v2.0.32 session tree', { timeout: MAX_TEST_MS }, async t => {
+test('session data access follows the pinned OpenCode session tree', { timeout: MAX_TEST_MS }, async t => {
   const host = requireRealHost(process.env.OATS_OPENCODE)
 
   const tempRoot = existsSync('/tmp/opencode') ? '/tmp/opencode' : tmpdir()
@@ -365,7 +365,7 @@ test('session data access follows a real OpenCode v2.0.32 session tree', { timeo
   )
   const auth = 'Basic ' + Buffer.from(`opencode:${started.password}`).toString('base64')
   // @opencode/client is the pinned promise client pulled in by
-  // @opencode/plugin@2.0.32; it is not a separate direct dependency.
+  // @opencode/plugin; it is not a separate direct dependency.
   const { OpenCode } = await import('@opencode/client/promise')
   const client = OpenCode.make({
     baseUrl: started.baseUrl,

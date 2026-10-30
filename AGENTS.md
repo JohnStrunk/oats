@@ -23,6 +23,10 @@ specification of the system:
   the system's features, written in Gherkin syntax, and the step definitions.
   See [`/features/AGENTS.md`](features/AGENTS.md) for the authoritative format,
   tagging requirements, and directory layout.
+- [`/.github/tooling/opencode-host/package.json`](.github/tooling/opencode-host/package.json)
+  is the source of truth specifically for the exact pinned OpenCode host version in
+  its `@opencode/cli` dependency, preserved during clean-room regeneration.
+  This authority does not extend to its lockfile or other configuration.
 - [`/AGENTS.md`](AGENTS.md), [`/.agents/**`](.agents), and
   [`/.opencode/**`](.opencode) - These files contain the development
   methodology and the definitions of the agents that develop and test the

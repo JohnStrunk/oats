@@ -6,8 +6,11 @@ through the OpenCode TUI host. Session data access supplies individual records;
 internal usage aggregation sums reported costs by agent name. Pricing attribution
 and reporting views remain planned. The
 descriptions below define conceptual boundaries, not a commitment to specific
-UI placements, libraries, or internal APIs. The host compatibility scope is
-pinned to OpenCode **v2.0.32**; compatibility with other releases is not established.
+UI placements, libraries, or internal APIs. The documented supported OpenCode
+host version follows the exact `@opencode/cli` pin in
+[the host package manifest](.github/tooling/opencode-host/package.json);
+compatibility with other releases is not established. An upgrade must pass
+verification before support for the newly pinned release is established.
 
 ## Main Components
 
@@ -92,7 +95,8 @@ the statistics flow; pricing attribution and reporting views remain planned:
 - Agent configuration or a currently selected model is not proof of the model
   used for earlier work. Attribution depends on recorded execution identities,
   and a session may contain work from multiple models.
-- OpenCode v2.0.32 typically does not persist historical events. Some event-only
+- OpenCode v2.0.32 typically does not persist historical events. This observation
+  is version-specific, not established for later releases. Some event-only
   usage and retry attempts may therefore be unreconstructible after the event
   is lost. Persisted records do not guarantee a complete execution history;
   refreshing cannot recover data the host no longer has. Session data access

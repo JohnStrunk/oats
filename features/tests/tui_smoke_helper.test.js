@@ -24,6 +24,15 @@ import {
   runTui,
   SUPERVISOR_PATH,
 } from "../steps/tui_smoke_helper.js";
+import { configuredHostVersion } from "../steps/host_pin_helper.js";
+
+const PIN = configuredHostVersion();
+const EXPECTED_VERSION = new RegExp(
+  `Expected OpenCode v${PIN.replaceAll(".", "\\.")}`,
+);
+
+// A valid exact release that can never equal the validated pin.
+const DIFFERENT_VERSION = PIN === "1.0.0" ? "1.0.1" : "1.0.0";
 
 const HOME_FRAME = "\x1b[2;1Hctrl+p help";
 const TOAST_FRAME = "\x1b[3;1H\x1b[32mOATS loaded";
@@ -84,7 +93,7 @@ function fakeOpenCode(directory, version) {
 }
 
 function installFakeHost(t) {
-  const { executable } = fakeOpenCode(withTempDir(t), "opencode v2.0.32");
+  const { executable } = fakeOpenCode(withTempDir(t), `opencode v${PIN}`);
   process.env.OATS_OPENCODE = executable;
   return executable;
 }
@@ -216,9 +225,9 @@ function createFakeHarness(
 
 test("wrong host versions are rejected before TUI startup", async (t) => {
   for (const version of [
-    "opencode v1.2.0",
-    "opencode v2.0.320",
-    "opencode v2.0.32-rc1",
+    `opencode v${DIFFERENT_VERSION}`,
+    `opencode v${PIN}0`,
+    `opencode v${PIN}-rc1`,
   ]) {
     await t.test(version, async (t) => {
       const directory = withTempDir(t);
@@ -226,7 +235,7 @@ test("wrong host versions are rejected before TUI startup", async (t) => {
       process.env.OATS_OPENCODE = executable;
       await assert.rejects(
         runTui({ configureOats: false }),
-        /Expected OpenCode v2\.0\.32/,
+        EXPECTED_VERSION,
       );
       assert.equal(fs.existsSync(marker), false, "unsupported host reached TUI startup");
     });
