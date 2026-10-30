@@ -5,8 +5,11 @@ and estimated costs across agents, subagents, and models.
 
 **Current behavior:** a brief **OATS loaded** startup toast confirms that the
 plugin loaded. Session data access supplies available historical and live
-individual records for the displayed session and its descendants. Aggregated token
-statistics, derived cost estimates, and reporting views remain planned.
+individual records for the displayed session and its descendants. Internal
+on-demand aggregation is available to summarize OpenCode-reported costs by
+recorded agent name, but the plugin does not currently invoke it. There is no
+reporting UI. Aggregated token statistics, derived cost estimates, and reporting
+views remain planned.
 
 ## Try the local plugin
 
@@ -91,8 +94,39 @@ incompleteness; refresh retries unavailable data where the host can supply it.
 OpenCode v2.0.32 typically does not persist historical events. Some event-only
 usage and retry attempts may be unreconstructible once those events are lost,
 so available records are not a guarantee of complete history. Refresh cannot
-recover data the host no longer has. This is a data-access capability only;
-aggregation, pricing calculations, and statistics UI remain planned.
+recover data the host no longer has.
+
+## Reported cost aggregation
+
+Internal aggregation produces one reported-cost summary per recorded agent name
+for the displayed session and its descendants, including nested delegated work.
+Repeated invocations and work across models combine under the same name. Each
+individual reported cost is counted once under the agent that performed the
+work, without adding delegated tree totals again.
+
+Summaries retain known totals and indicate incompleteness. Missing or ambiguous
+cost is not treated as zero; an agent with no known cost has no known total.
+Work without a recorded agent name remains unattributed, preserving its known
+cost rather than assigning it to another agent or dropping it. Any unattributed
+work makes the overall summary incomplete, even when its cost is known. Unknown
+session-wide data-access gaps mark only the overall summary incomplete; each
+agent's incompleteness flag reflects only that agent's available records. An
+unset agent flag therefore does not guarantee that all of the agent's work is
+present when the overall summary is incomplete.
+
+Aggregation runs on demand from each latest scoped session-data snapshot; it
+does not subscribe to updates or maintain reactive summaries. Invoking it again
+with the latest snapshot reflects record additions and updates without duplicate
+contributions or retained contributions from earlier snapshots. The supplied
+scope covers the displayed session subtree, excluding unrelated sessions and
+the previously displayed subtree. No displayed session means no agent summaries.
+
+For internal consumers, `createUsageAggregation(sessionData).getSummary()` reads
+the latest snapshot on each call; this facade is not a public package API.
+
+This is an internal capability, not a visible reporting view. It sums reported
+costs, not estimates derived from token rates, and does not guarantee billing
+accuracy. A reported zero does not prove that the provider charged nothing.
 
 ## Planned experience
 
@@ -146,6 +180,17 @@ below; the unit suite requires the lint tools as well as Bash on `PATH`:
 ```bash
 npm run test:unit
 ```
+
+Run the reported-cost aggregation acceptance scenarios without launching
+OpenCode:
+
+```bash
+npm run test:features -- --tags '@component:usage-aggregation'
+```
+
+The specifications in [features/usage-aggregation/](features/usage-aggregation/)
+cover attribution, incomplete data, session isolation, updates, and aggregation
+invariants, including property-based coverage.
 
 The unit suite does not launch a real OpenCode host. The separate
 [`session-data-access.real-host.test.js`](features/real-host-tests/session-data-access.real-host.test.js)
