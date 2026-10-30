@@ -1,6 +1,7 @@
 import { createSignal, onCleanup } from 'solid-js'
 import { createElement, insert, setProp } from '@opentui/solid'
 import { aggregateReportedCostsForDisplay, formatReportedCost } from './usage-aggregation.js'
+import { openUsageDetailsModal } from './usage-details.js'
 
 export const formatCost = formatReportedCost
 
@@ -162,12 +163,36 @@ export function createAgentStatsView(context, sessionData, input, expanded, togg
   const box = createElement('box')
   setProp(box, 'flexDirection', 'column')
   setProp(box, 'width', '100%')
-  const header = createElement('text')
-  setProp(header, 'fg', context.theme?.text?.base)
+
+  const header = createElement('box')
+  setProp(header, 'flexDirection', 'row')
   setProp(header, 'onMouseDown', (event) => {
     if (event.button === 0) { toggle(); event.stopPropagation?.() }
   })
-  insert(header, () => `${expanded() ? '▼' : '▶'} Agent stats`)
+
+  const title = createElement('text')
+  setProp(title, 'fg', context.theme?.text?.base)
+  setProp(title, 'onMouseDown', (event) => {
+    if (event.button === 0) { toggle(); event.stopPropagation?.() }
+  })
+  insert(title, () => `${expanded() ? '▼' : '▶'} Agent stats `)
+  insert(header, title)
+
+  const details = createElement('text')
+  setProp(details, 'fg', context.theme?.text?.muted ?? context.theme?.text?.base)
+  setProp(details, 'onMouseDown', (event) => {
+    if (event.button === 0) {
+      event.stopPropagation?.()
+    }
+  })
+  setProp(details, 'onMouseUp', (event) => {
+    if (event.button === 0) {
+      openUsageDetailsModal(context, sessionData, input)
+      event.stopPropagation?.()
+    }
+  })
+  insert(details, '(details)')
+  insert(header, details)
   insert(box, header)
 
   const content = createElement('box')

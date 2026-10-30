@@ -6,8 +6,8 @@ and estimated costs across agents, subagents, and models.
 **Current behavior:** a brief **OATS loaded** startup toast confirms that the
 plugin loaded. The collapsible **Agent stats** session-sidebar section shows
 known OpenCode-reported costs by recorded agent name for the displayed session
-and its descendants. Aggregated token statistics, model-price-derived estimates,
-and a larger detail view remain planned.
+and its descendants. Its **(details)** link opens a live breakdown by agent and
+model, with token counts and estimated category costs at current model prices.
 
 ## Try the local plugin
 
@@ -77,7 +77,7 @@ There is no project-local `cli.json`. See the official V2
    showing its total known reported cost, including nested delegated work.
    Repeated invocations of the same agent are combined, even across models.
    Costs are right-aligned in a shared column.
-3. Click the **Agent stats** heading to collapse or expand its contents. For
+3. Click the **Agent stats** title to collapse or expand its contents. For
    keyboard interaction, open OpenCode's command palette and select
    **Toggle Agent stats**. The heading uses the host's disclosure indicators:
    `▼` when expanded and `▶` when collapsed.
@@ -128,8 +128,49 @@ The maximum displayable magnitude is `$9999.99`. Rounded totals above that
 range display as `>$9999.99`; those below `-$9999.99` display as `<-$9999.99`,
 rather than an exact clipped cap. The completeness marker is preserved even
 when a total is outside the display range.
-Token breakdowns, model-price-derived estimates, a larger detail view, and
-base-versus-total comparisons are outside this initial sidebar experience.
+The compact sidebar shows reported costs; token breakdowns and current-price
+estimates are available in the details modal below. Base-versus-total
+comparisons remain planned.
+
+### Usage details
+
+Click **(details)** in **Agent stats (details)** to open the usage modal without
+collapsing or expanding the sidebar section. Use the host's standard modal
+scrolling and dismissal controls to browse and close it.
+
+The modal groups available usage by recorded agent and model, sorted by agent,
+then model. Models from different providers remain separate, and work without
+a recorded agent is grouped as unattributed. Each heading shows the pair's
+OpenCode-reported cost, not the sum of its estimated category costs. Each table
+has **input**, **output**, **cache write**, and **cache read** columns:
+
+- **Price** shows the current model price per million tokens, or `mixed` when
+  calls use different pricing tiers rather than implying one shared rate.
+- **Tokens** shows available token counts. **Output** includes host-reported
+  reasoning tokens, priced at the output rate.
+- **Cost** sums per-call category estimates, each calculated as the applicable
+  current-tier price × that call's tokens ÷ 1,000,000. Pricing tiers are selected
+  per call, not from the combined token count.
+
+`e` identifies estimates and partial or incomplete values. Unknown usage,
+prices, and costs are not treated as zero; partial results retain the known
+portion rather than implying a complete total. If a call's applicable tier
+cannot be determined, its estimate remains unknown and the combined result
+remains partial or unknown. A reported zero price or cost does not prove the
+provider charged nothing.
+
+**Current-price estimates are not historical charges:** available model prices
+may differ from those in effect when the work ran or from your provider's
+billing terms. Estimated category costs can therefore differ from the reported
+heading and sidebar costs or your invoice. Provider usage accounting and missing
+prices or token counts can also limit the breakdown. OATS is not a billing
+ledger.
+
+The open modal follows the currently displayed session and its descendants,
+updating as session data changes and usage settles at step boundaries, not for
+every streamed token. Available records do not guarantee complete history;
+the existing [session-data limitations](#session-data-access), including missing
+events and uncertain fork provenance, also apply to these details.
 
 ### Host-provided UI runtime
 
@@ -208,11 +249,9 @@ zero does not prove that the provider charged nothing.
 ## Planned experience
 
 - Token usage and model-price-derived estimates in the sidebar.
-- An expanded view with token and estimated-cost breakdowns per agent and
-  subagent, and per model.
 - Base-versus-total cost comparisons, once their meaning is defined.
 
-Usage reporting and cost estimates will depend on the data available from
+Usage reporting and cost estimates depend on the data available from
 OpenCode and model providers. Estimates are informational, not billing
 guarantees, and may differ from provider invoices.
 
@@ -228,9 +267,9 @@ The project uses an agent-assisted, specification-driven workflow:
 4. Implement behavior against those specifications, then verify and audit it.
 
 Feature specifications follow the conventions in
-[features/AGENTS.md](features/AGENTS.md). The sidebar is the initial reported-cost
-view; the broader reporting experience under Planned experience remains future
-work.
+[features/AGENTS.md](features/AGENTS.md). The sidebar presents reported costs;
+the details modal adds token breakdowns and current-price estimates. The items
+under Planned experience remain future work.
 
 ## Development and verification
 

@@ -137,7 +137,7 @@ function decimalParts(value) {
 
 // The exponent spread of finite doubles is small (about -324..292), so every
 // alignment power stays bounded even for Number.MIN_VALUE and Number.MAX_VALUE.
-function sumExactDecimals(costs) {
+export function sumExactDecimals(costs) {
   let exponent = Infinity
   const parts = []
   for (const cost of costs) {
@@ -153,7 +153,7 @@ function sumExactDecimals(costs) {
   return { units, exponent }
 }
 
-function formatExactCents({ units, exponent }) {
+export function formatExactCents({ units, exponent }) {
   const cents = ceilCents(units, exponent)
   if (cents > MAX_DISPLAY_CENTS || cents < -MAX_DISPLAY_CENTS) return null
   if (cents === 0n) return '$0.00'
