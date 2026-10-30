@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import fc from 'fast-check'
 import { agentStatsLines, formatCost } from '../../src/agent-stats.js'
+import { costRows, legendCount, rowFor } from './agent-stats-display-oracle.js'
 
 const record = (id, agent, cost, sessionID = 'root') => ({
   id: `${sessionID}/${id}`,
@@ -23,8 +24,8 @@ const snapshot = (records, overrides = {}) => ({
   ...overrides,
 })
 
-const lineFor = (lines, label) =>
-  lines.find((line) => line.startsWith(`${label}:`)) ?? ''
+const valueFor = (lines, label) => rowFor(lines, label)?.value ?? ''
+const markerFor = (lines, label) => rowFor(lines, label)?.marker ?? ''
 
 test('formats reported costs as US dollars with at least two decimals', () => {
   assert.equal(formatCost(0), '$0.00')
@@ -97,11 +98,11 @@ test('sums reported decimal records exactly before rounding once to cents', () =
     'root',
   )
 
-  assert.equal(lineFor(lines, 'sum'), 'sum: $0.30')
-  assert.equal(lineFor(lines, 'halves'), 'halves: $0.01')
-  assert.equal(lineFor(lines, 'subcent'), 'subcent: $0.01')
-  assert.equal(lineFor(lines, 'many'), 'many: $0.60')
-  assert.equal(lineFor(lines, 'negative'), 'negative: $-0.30')
+  assert.equal(valueFor(lines, 'sum'), '$0.30')
+  assert.equal(valueFor(lines, 'halves'), '$0.01')
+  assert.equal(valueFor(lines, 'subcent'), '$0.01')
+  assert.equal(valueFor(lines, 'many'), '$0.60')
+  assert.equal(valueFor(lines, 'negative'), '$-0.30')
 })
 
 test('bounds displayed totals above $9999.99 and below -$9999.99', () => {
@@ -126,8 +127,8 @@ test('uses the display bounds for agent totals as well as single values', () => 
     'root',
   )
 
-  assert.equal(lineFor(lines, 'over'), 'over: >$9999.99')
-  assert.equal(lineFor(lines, 'under'), 'under: <-$9999.99')
+  assert.equal(valueFor(lines, 'over'), '>$9999.99')
+  assert.equal(valueFor(lines, 'under'), '<-$9999.99')
 })
 
 test('shows one combined row per recorded agent name', () => {
@@ -140,9 +141,9 @@ test('shows one combined row per recorded agent name', () => {
     'root',
   )
 
-  assert.equal(lines.filter((line) => line.startsWith('alpha:')).length, 1)
-  assert.equal(lineFor(lines, 'alpha'), 'alpha: $8.00')
-  assert.equal(lineFor(lines, 'worker'), 'worker: $2.00')
+  assert.equal(costRows(lines).filter((row) => row.label === 'alpha').length, 1)
+  assert.equal(valueFor(lines, 'alpha'), '$8.00')
+  assert.equal(valueFor(lines, 'worker'), '$2.00')
 })
 
 test('presents a stale snapshot as loading instead of the previous session totals', () => {
@@ -181,29 +182,27 @@ test('identifies incomplete agent totals without turning missing cost into zero'
     'root',
   )
 
-  assert.equal(lineFor(lines, 'partial'), 'partial: $2.00 (incomplete)')
+  assert.equal(valueFor(lines, 'partial'), '$2.00')
+  assert.equal(markerFor(lines, 'partial'), 'e')
+  assert.equal(legendCount(lines), 1)
   assert.ok(lines.includes('Summary incomplete'))
 })
 
-test('identifies an agent with no known cost with a compact incomplete marker', () => {
+test('identifies an agent with no known cost as unavailable without an e marker', () => {
   const lines = agentStatsLines(snapshot([record('unknown', 'unknown', null)]), 'root')
-  const unknown = lineFor(lines, 'unknown')
+  const unknown = rowFor(lines, 'unknown')
 
-  assert.equal(unknown, 'unknown: unavailable (!)')
-  assert.ok(!unknown.includes('(incomplete)'), 'the long unknown row must use the compact marker')
-  assert.ok(!unknown.includes('$0.00'), 'unknown cost must not be presented as zero')
-  assert.equal(
-    lines.filter((line) => line === '! = incomplete total').length,
-    1,
-    'the compact marker must have exactly one legend',
-  )
+  assert.equal(unknown.value, 'unavailable')
+  assert.equal(unknown.marker, 'blank')
+  assert.ok(!unknown.line.includes('$0.00'), 'unknown cost must not be presented as zero')
+  assert.equal(legendCount(lines), 0, 'unknown totals do not add an e legend')
   assert.ok(lines.includes('Summary incomplete'))
 })
 
 test('keeps unknown agent identity visible as unattributed work', () => {
   const lines = agentStatsLines(snapshot([record('anonymous', null, 3)]), 'root')
 
-  assert.equal(lineFor(lines, 'Unattributed'), 'Unattributed: $3.00')
+  assert.equal(valueFor(lines, 'Unattributed'), '$3.00')
   assert.ok(!lines.some((line) => line.startsWith('null:')))
   assert.ok(lines.includes('Summary incomplete'))
 })
@@ -214,8 +213,11 @@ test('sanitizes agent names so history cannot inject terminal control sequences'
     'root',
   )
 
+  const rows = costRows(lines)
+  assert.equal(rows.length, 1)
   assert.equal(lines.length, 1)
   assert.ok(!lines[0].includes('\u001b'))
   assert.ok(!lines[0].includes('\n'))
-  assert.match(lines[0], /^alpha.*beta: \$1\.00$/)
+  assert.equal(rows[0].value, '$1.00')
+  assert.match(rows[0].label, /^alpha.*beta$/)
 })

@@ -4,6 +4,7 @@ import plugin from '../../src/tui.js'
 import { agentStatsLines } from '../../src/agent-stats.js'
 import { createSessionDataAccess } from '../../src/session-data-access.js'
 import { hostFixture, waitForSnapshot } from '../steps/session_data_helper.js'
+import { costRows, rowFor } from './agent-stats-display-oracle.js'
 
 const snapshot = (records = [], options = {}) => ({
   sessionID: 'root', records, complete: true, gaps: [], errors: [], ...options,
@@ -126,7 +127,7 @@ test('empty snapshots distinguish benign gaps from withheld history', () => {
   assert.ok(withheld.includes('Session history unavailable'))
   assert.ok(agentStatsLines(snapshot(), 'root').includes('No agent usage recorded'))
   const partial = agentStatsLines(snapshot([record('alpha', 2)], { complete: false, gaps: [{ kind: 'historical-usage-unavailable' }] }), 'root')
-  assert.ok(partial.includes('alpha: $2.00'))
+  assert.equal(rowFor(partial, 'alpha').value, '$2.00')
   assert.ok(partial.includes('Summary incomplete'))
 })
 
@@ -137,15 +138,19 @@ test('sanitized, truncated and reserved names remain visibly distinct', () => {
     record('alpha� #1', 5), record('Unattributed', 6), record(null, 7),
     record('alpha\x01', 8),
   ]
-  const lines = agentStatsLines(snapshot(records), 'root').filter(line => line.includes(': $'))
-  const labels = lines.map(line => line.slice(0, line.indexOf(': $')))
+  const lines = agentStatsLines(snapshot(records), 'root')
+  const rows = costRows(lines)
+  const labels = rows.map((row) => row.label)
   assert.equal(labels.length, 7)
   assert.equal(new Set(labels).size, 7)
-  assert.ok(labels.every(label => Array.from(label).length <= 16))
-  assert.ok(lines.some(line => line.endsWith(': $9.00')))
-  assert.ok(lines.includes('Unattributed: $7.00'))
-  assert.ok(lines.some(line => line.startsWith('Unattributed') && line.endsWith(': $6.00') && !line.startsWith('Unattributed:')))
-  assert.deepEqual([...labels].sort(), agentStatsLines(snapshot([...records].reverse()), 'root').filter(line => line.includes(': $')).map(line => line.slice(0, line.indexOf(': $'))).sort())
+  assert.ok(labels.every((label) => Array.from(label).length <= 16))
+  assert.ok(rows.some((row) => row.value === '$9.00'))
+  assert.equal(rowFor(lines, 'Unattributed').value, '$7.00')
+  assert.ok(rows.some((row) => row.label.startsWith('Unattributed') && row.label !== 'Unattributed' && row.value === '$6.00'))
+  assert.deepEqual(
+    [...labels].sort(),
+    costRows(agentStatsLines(snapshot([...records].reverse()), 'root')).map((row) => row.label).sort(),
+  )
 })
 
 test('keyboard toggle is available in the command palette without a default binding', () => {

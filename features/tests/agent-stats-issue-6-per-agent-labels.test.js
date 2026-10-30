@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { agentStatsLines } from '../../src/agent-stats.js'
-
-const HOST_WIDTH = 30
-const LEGEND = '! = incomplete total'
+import {
+  MAX_HOST_CONTENT_WIDTH,
+  costRows,
+  displayWidth,
+  legendCount,
+  rowFor,
+  rowsShareValueEnd,
+} from './agent-stats-display-oracle.js'
 
 const snapshot = (records, extra = {}) => ({
   sessionID: 'root',
@@ -14,41 +19,8 @@ const snapshot = (records, extra = {}) => ({
   ...extra,
 })
 
-const rowsOf = (lines) => lines.filter((line) => line.includes(': '))
-
-// Independent cell-width oracle for the pinned host: glibc wcwidth in its
-// UTF-8 locale and Unicode East_Asian_Width. ASCII printable and the
-// ambiguous-width ellipsis occupy one cell; Kana Supplement U+1B000 (EAW=W),
-// CJK, and emoji occupy two. Keep these values separate from src/agent-stats.js
-// so a classifier regression cannot validate itself.
-const HOST_CELL_WIDTHS = new Map([
-  [0x2026, 1], // … horizontal ellipsis, ambiguous width rendered as one cell
-  [0x1b000, 2], // Kana Supplement, East_Asian_Width W
-  [0x4ee3, 2], // 代 CJK
-  [0x7406, 2], // 理 CJK
-  [0x1f600, 2], // 😀 emoji
-  [0xfffd, 1], // � replacement character, ambiguous width
-])
-
-const displayWidth = (text) => {
-  let width = 0
-  for (const char of text) {
-    const code = char.codePointAt(0)
-    if (code >= 0x20 && code <= 0x7e) {
-      width += 1
-      continue
-    }
-    const known = HOST_CELL_WIDTHS.get(code)
-    assert.notEqual(known, undefined, `width oracle lacks U+${code.toString(16).toUpperCase()}`)
-    width += known
-  }
-  return width
-}
-
-const labelOf = (row) => row.slice(0, row.indexOf(': '))
-
-const suffixNumber = (row) => {
-  const match = labelOf(row).match(/ #([0-9a-z]+)$/)
+const suffixNumber = (label) => {
+  const match = label.match(/ #([0-9a-z]+)$/)
   return match ? Number.parseInt(match[1], 36) : null
 }
 
@@ -59,14 +31,16 @@ test('an unrelated expensive incomplete row does not shorten complete labels', (
     { agent: 'expensive-research', cost: 1e308 },
     { agent: 'expensive-research', cost: null },
   ]), 'root')
-  const rows = rowsOf(lines)
+  const rows = costRows(lines)
 
-  assert.ok(rows.includes('research-alpha: $1.00'), rows.join('\n'))
-  assert.ok(rows.includes('research-beta: $2.00'), rows.join('\n'))
-  const expensive = rows.find((row) => row.includes('>$9999.99'))
-  assert.ok(expensive?.endsWith(' (incomplete)'), expensive)
-  assert.ok(rows.every((row) => displayWidth(row) <= HOST_WIDTH), rows.join('\n'))
-  assert.ok(!rows.some((row) => row.includes(' #')), 'unrelated labels must not collide')
+  assert.equal(rowFor(lines, 'research-alpha').value, '$1.00')
+  assert.equal(rowFor(lines, 'research-beta').value, '$2.00')
+  const expensive = rows.find((row) => row.value === '>$9999.99')
+  assert.equal(expensive.marker, 'e')
+  assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
+  assert.ok(rows.every((row) => row.width <= MAX_HOST_CONTENT_WIDTH), rows.join('\n'))
+  assert.ok(!rows.some((row) => row.label.includes(' #')), 'unrelated labels must not collide')
+  assert.equal(legendCount(lines), 1)
 })
 
 test('an unrelated unknown total does not shorten complete labels', () => {
@@ -75,14 +49,16 @@ test('an unrelated unknown total does not shorten complete labels', () => {
     { agent: 'research-beta', cost: 2 },
     { agent: 'expensive-research', cost: null },
   ]), 'root')
-  const rows = rowsOf(lines)
+  const rows = costRows(lines)
 
-  assert.ok(rows.includes('research-alpha: $1.00'), rows.join('\n'))
-  assert.ok(rows.includes('research-beta: $2.00'), rows.join('\n'))
-  const unknown = rows.find((row) => row.includes('unavailable'))
-  assert.ok(unknown?.endsWith(' (!)'), unknown)
-  assert.ok(rows.every((row) => displayWidth(row) <= HOST_WIDTH), rows.join('\n'))
-  assert.ok(lines.includes(LEGEND))
+  assert.equal(rowFor(lines, 'research-alpha').value, '$1.00')
+  assert.equal(rowFor(lines, 'research-beta').value, '$2.00')
+  const unknown = rows.find((row) => row.value === 'unavailable')
+  assert.equal(unknown.marker, 'blank')
+  assert.equal(unknown.markerSlot, ' ')
+  assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
+  assert.ok(rows.every((row) => row.width <= MAX_HOST_CONTENT_WIDTH), rows.join('\n'))
+  assert.equal(legendCount(lines), 0)
 })
 
 test('sanitized collisions with different per-agent budgets stay unique', () => {
@@ -91,21 +67,28 @@ test('sanitized collisions with different per-agent budgets stay unique', () => 
     { agent: 'a�b', cost: 1e308 },
     { agent: 'a�b', cost: null },
   ]), 'root')
-  const rows = rowsOf(lines)
-  const labels = rows.map(labelOf)
+  const rows = costRows(lines)
+  const labels = rows.map((row) => row.label)
 
   assert.equal(rows.length, 2)
   assert.equal(new Set(labels).size, 2, rows.join('\n'))
-  assert.ok(rows.includes('a�b #1: $1.00'), rows.join('\n'))
-  assert.ok(rows.some((row) => row.endsWith(': >$9999.99 (incomplete)')), rows.join('\n'))
-  assert.ok(rows.every((row) => displayWidth(row) <= HOST_WIDTH), rows.join('\n'))
+  const known = rows.find((row) => row.value === '$1.00')
+  const overflow = rows.find((row) => row.value === '>$9999.99')
+  assert.equal(known.label, 'a�b #1')
+  assert.equal(overflow.marker, 'e')
+  assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
+  assert.ok(rows.every((row) => row.width <= MAX_HOST_CONTENT_WIDTH), rows.join('\n'))
+  assert.equal(legendCount(lines), 1)
 
   const reversed = agentStatsLines(snapshot([
     { agent: 'a�b', cost: null },
     { agent: 'a�b', cost: 1e308 },
     { agent: 'a\u200Bb', cost: 1 },
   ]), 'root')
-  assert.deepEqual([...rows].sort(), [...rowsOf(reversed)].sort())
+  assert.deepEqual(
+    rows.map((row) => row.line).sort(),
+    costRows(reversed).map((row) => row.line).sort(),
+  )
 })
 
 test('a collided label never reuses a unique candidate or the reserved bucket', () => {
@@ -117,14 +100,15 @@ test('a collided label never reuses a unique candidate or the reserved bucket', 
     { agent: 'Unattributed', cost: 4 },
     { agent: null, cost: 3 },
   ]), 'root')
-  const rows = rowsOf(lines)
-  const labels = rows.map(labelOf)
+  const rows = costRows(lines)
+  const labels = rows.map((row) => row.label)
 
   assert.equal(new Set(labels).size, labels.length, rows.join('\n'))
-  assert.ok(rows.includes('Unattributed: $3.00'), rows.join('\n'))
-  assert.ok(rows.includes('a�b #1: $2.00'), rows.join('\n'))
-  assert.ok(rows.some((row) => row.startsWith('Unattributed') && !row.startsWith('Unattributed:')))
-  assert.ok(rows.every((row) => displayWidth(row) <= HOST_WIDTH), rows.join('\n'))
+  assert.equal(rowFor(lines, 'Unattributed').value, '$3.00')
+  assert.ok(rows.some((row) => row.label.startsWith('Unattributed') && row.label !== 'Unattributed'))
+  assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
+  assert.ok(rows.every((row) => row.width <= MAX_HOST_CONTENT_WIDTH), rows.join('\n'))
+  assert.equal(legendCount(lines), 1)
 })
 
 test('collision suffixes increase globally in stable name order', () => {
@@ -133,12 +117,12 @@ test('collision suffixes increase globally in stable name order', () => {
     'qrstuvwxyzabcdef-a', 'qrstuvwxyzabcdef-b',
   ]
   const lines = agentStatsLines(snapshot(names.map((agent) => ({ agent, cost: 1 }))), 'root')
-  const numbers = rowsOf(lines).map(suffixNumber)
+  const numbers = costRows(lines).map((row) => suffixNumber(row.label))
 
-  assert.deepEqual(numbers, [1, 2, 3, 4], rowsOf(lines).join('\n'))
+  assert.deepEqual(numbers, [1, 2, 3, 4], costRows(lines).map((row) => row.label).join('\n'))
 })
 
-test('mixed narrow and wide budgets keep every row within 30 columns', () => {
+test('mixed narrow and wide budgets keep every row within the host content edge', () => {
   const records = [
     { agent: 'research-alpha', cost: 1 },
     { agent: 'research-beta', cost: 2 },
@@ -153,16 +137,17 @@ test('mixed narrow and wide budgets keep every row within 30 columns', () => {
     { agent: null, cost: null },
   ]
   const lines = agentStatsLines(snapshot(records), 'root')
-  const rows = rowsOf(lines)
+  const rows = costRows(lines)
 
   assert.ok(rows.length >= 7)
   for (const row of rows) {
-    assert.ok(displayWidth(row) <= HOST_WIDTH, `${displayWidth(row)} columns: ${row}`)
-    assert.ok(!row.endsWith('unavailable'), `amount and status must both remain: ${row}`)
+    assert.ok(row.width <= MAX_HOST_CONTENT_WIDTH, `${row.width} columns: ${row.line}`)
+    assert.ok(row.markerSlot === (row.marker === 'e' ? 'e' : ' '), row.line)
+    assert.ok(!row.line.includes('(!)'), row.line)
   }
-  const usesCompact = rows.some((row) => row.endsWith(' (!)')) ||
-    lines.includes(LEGEND)
-  assert.equal(usesCompact, lines.includes(LEGEND))
+  assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
+  const usesMarker = rows.some((row) => row.marker === 'e')
+  assert.equal(usesMarker, legendCount(lines) === 1)
   assert.ok(lines.includes('Summary incomplete'))
 })
 
@@ -172,24 +157,25 @@ test('Kana Supplement U+1B000 is reserved as a wide cell in a row', () => {
     {
       records: [{ agent: name, cost: null }],
       amount: 'unavailable',
-      marker: ' (!)',
+      marker: 'blank',
     },
     {
       records: [{ agent: name, cost: 1e308 }, { agent: name, cost: null }],
       amount: '>$9999.99',
-      marker: ' (incomplete)',
+      marker: 'e',
     },
   ]
 
   for (const { records, amount, marker } of cases) {
-    const rows = rowsOf(agentStatsLines(snapshot(records), 'root'))
+    const rows = costRows(agentStatsLines(snapshot(records), 'root'))
     assert.equal(rows.length, 1, JSON.stringify(records))
     const [row] = rows
 
-    assert.ok(row.includes(amount), row)
-    assert.ok(row.endsWith(marker), row)
-    assert.ok(row.includes('\u{1B000}'), `wide name must remain visible: ${row}`)
-    assert.ok(displayWidth(row) <= HOST_WIDTH, `${displayWidth(row)} columns: ${row}`)
+    assert.equal(row.value, amount)
+    assert.equal(row.marker, marker)
+    assert.equal(row.markerSlot, marker === 'e' ? 'e' : ' ')
+    assert.ok(row.label.includes('\u{1B000}'), `wide name must remain visible: ${row.line}`)
+    assert.ok(row.width <= MAX_HOST_CONTENT_WIDTH, `${row.width} columns: ${row.line}`)
   }
 })
 
@@ -210,20 +196,19 @@ test('rows fit an independent host-width oracle across scripts', () => {
 
   for (const agent of names) {
     for (const records of variants(agent)) {
-      const lines = agentStatsLines(snapshot(records), 'root')
-      const rows = rowsOf(lines)
+      const rows = costRows(agentStatsLines(snapshot(records), 'root'))
       assert.equal(rows.length, 1, JSON.stringify(records))
       const [row] = rows
-      assert.ok(displayWidth(row) <= HOST_WIDTH, `${displayWidth(row)} columns: ${row}`)
-      assert.ok(!row.endsWith('unavailable'), `amount and status must both remain: ${row}`)
+      assert.ok(displayWidth(row.line) <= MAX_HOST_CONTENT_WIDTH,
+        `${displayWidth(row.line)} columns: ${row.line}`)
+      assert.equal(row.markerSlot, row.marker === 'e' ? 'e' : ' ')
     }
   }
 })
 
-test('suffix overflow falls back without leaving the 30-column row', { timeout: 7000 }, () => {
+test('massive collisions stay unique and bounded', { timeout: 7000 }, () => {
   // Every name sanitizes to the same four-cell candidate, so all rows share
-  // the smallest per-agent budget. 216^2 names push the global base-36 suffix
-  // past that budget, exercising the suffix-only fallback.
+  // the smallest per-agent budget.
   const marks = []
   for (let code = 0x300; code <= 0x2000 && marks.length < 216; code++) {
     const char = String.fromCodePoint(code)
@@ -233,13 +218,14 @@ test('suffix overflow falls back without leaving the 30-column row', { timeout: 
   const records = marks.flatMap((first) =>
     marks.map((second) => ({ agent: `a${first}${second}b`, cost: null })))
   const lines = agentStatsLines(snapshot(records), 'root')
-  const rows = rowsOf(lines)
+  const rows = costRows(lines)
 
   assert.equal(rows.length, records.length)
-  assert.equal(new Set(lines).size, lines.length)
-  assert.ok(rows.every((row) => displayWidth(row) <= HOST_WIDTH), 'every fallback row must fit')
-  assert.ok(rows.some((row) => row.startsWith('#1000:') && row.endsWith(' (!)')),
-    'past 36^3 collisions the numeric suffix alone exceeds the budget and compacts the marker')
+  assert.equal(new Set(rows.map((row) => row.label)).size, rows.length)
+  assert.ok(rowsShareValueEnd(rows), 'all fallback rows must share the value column')
+  assert.ok(rows.every((row) => row.width <= MAX_HOST_CONTENT_WIDTH), 'every row must fit')
+  assert.ok(rows.every((row) => row.marker === 'blank'))
+  assert.equal(legendCount(lines), 0)
 })
 
 test('thousands of mixed-budget colliding rows resolve uniquely and quickly', { timeout: 7000 }, () => {
@@ -255,11 +241,13 @@ test('thousands of mixed-budget colliding rows resolve uniquely and quickly', { 
   const start = performance.now()
   const lines = agentStatsLines(snapshot(records), 'root')
   const elapsed = performance.now() - start
-  const rows = rowsOf(lines)
+  const rows = costRows(lines)
 
   assert.equal(rows.length, 6000)
-  assert.equal(new Set(lines).size, lines.length)
-  assert.ok(rows.every((row) => displayWidth(row) <= HOST_WIDTH), rows.join('\n'))
+  assert.equal(new Set(rows.map((row) => row.label)).size, rows.length)
+  assert.ok(rowsShareValueEnd(rows), rows.join('\n'))
+  assert.ok(rows.every((row) => row.width <= MAX_HOST_CONTENT_WIDTH), rows.join('\n'))
+  assert.equal(legendCount(lines), 1)
   assert.ok(elapsed < 5000, `collision resolution took ${elapsed.toFixed(0)} ms`)
 
   const reversed = agentStatsLines(snapshot([...records].reverse()), 'root')

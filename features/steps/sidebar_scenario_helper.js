@@ -51,6 +51,18 @@ export function makeSidebarFixture(name) {
       fixture.sessions = [session('root')]
       fixture.messages = { root: [msg('partial-1', 'partial', 2), msg('partial-2', 'partial', null), msg('unknown', 'unknown', null), msg('unattributed', null, 3)] }
       break
+    case 'aligned mixed':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [msg('a', 'alpha', 0), msg('b1', 'beta', 1.2), msg('b2', 'beta', null), msg('c', 'gamma', null), msg('d', 'delta', -10000), msg('u1', null, 3), msg('u2', null, null)] }
+      break
+    case 'aligned complete':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [msg('a', 'alpha', 0), msg('b', 'beta', 10000), msg('u', null, 3)] }
+      break
+    case 'aligned unknown':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [msg('a', 'alpha', null), msg('u', null, null)] }
+      break
     case 'partial failure':
       fixture.failures = ['message:child:0']
       break

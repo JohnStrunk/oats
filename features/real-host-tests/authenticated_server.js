@@ -273,6 +273,9 @@ function sessionInfo(id, project, title, parentID) {
   }
 }
 
+// The host import schema requires an assistant agent/model. Usage fields are
+// optional, so omitting `cost` is how the host represents a recorded call whose
+// cost never settled; that is what makes a total incomplete or unknown.
 function assistant(id, { agent, cost }) {
   return {
     id,
@@ -281,13 +284,33 @@ function assistant(id, { agent, cost }) {
     agent,
     model: model(`${agent}-model`),
     content: [],
-    cost,
+    ...(cost === undefined ? {} : { cost }),
+    tokens: tokens(1),
+  }
+}
+
+// Assistant messages always carry an agent, so work without a recorded agent
+// name can only arrive through compaction usage, which has no agent identity.
+function compaction(id, { cost } = {}) {
+  return {
+    id,
+    time: { created: 1500 },
+    type: 'compaction',
+    status: 'completed',
+    reason: 'manual',
+    summary: `sidebar fixture ${id}`,
+    recent: `sidebar fixture ${id} recent`,
+    ...(cost === undefined ? {} : { cost }),
     tokens: tokens(1),
   }
 }
 
 /**
- * Import a root session with repeated alpha work and a nested beta child.
+ * Import a root session with repeated alpha work and nested children.
+ * The subtree also holds the totals that exercise issue #34 row formatting:
+ * beta has one settled call plus one whose cost never settled, gamma has no
+ * known cost at all, zero has a reported zero, and compaction usage is
+ * unattributed. Every row below is produced by the real host HTTP import.
  * The session-level agent/model intentionally differ from the recorded message
  * identities so a regression that reads current configuration is visible.
  */
@@ -303,6 +326,7 @@ export async function importSidebarSessions({ baseUrl, password, project, title 
   const suffix = randomBytes(6).toString('hex')
   const sessionID = `ses_sidebar_root_${suffix}`
   const childID = `ses_sidebar_child_${suffix}`
+  const accountingID = `ses_sidebar_accounting_${suffix}`
   const messageID = name => `msg_sidebar_${name}_${suffix}`
 
   await client.session.import({
@@ -314,16 +338,37 @@ export async function importSidebarSessions({ baseUrl, password, project, title 
   })
   await client.session.import({
     info: sessionInfo(childID, project, `${title} child`, sessionID),
-    messages: [assistant(messageID('beta'), { agent: 'beta', cost: 2 })],
+    messages: [
+      assistant(messageID('beta'), { agent: 'beta', cost: 2 }),
+      // Never settled, so beta's $2.00 is a known but incomplete total.
+      assistant(messageID('beta-unsettled'), { agent: 'beta' }),
+    ],
+  })
+  await client.session.import({
+    info: sessionInfo(accountingID, project, `${title} accounting`, sessionID),
+    messages: [
+      // No known cost at all: the row is unavailable, not zero.
+      assistant(messageID('gamma'), { agent: 'gamma' }),
+      assistant(messageID('zero'), { agent: 'zero', cost: 0 }),
+      compaction(messageID('compaction-known'), { cost: 1 }),
+      // Unattributed usage with a missing cost keeps the known part and marks
+      // the total incomplete.
+      compaction(messageID('compaction-unsettled')),
+    ],
   })
 
   return {
     sessionID,
     childID,
     title,
-    agents: [
-      { name: 'alpha', cost: 3 },
-      { name: 'beta', cost: 2 },
+    // Expected rendered rows. `marker` is the character immediately after the
+    // value: `e` for a known incomplete total, otherwise the reserved blank.
+    rows: [
+      { label: 'alpha', value: '$3.00', marker: '' },
+      { label: 'beta', value: '$2.00', marker: 'e' },
+      { label: 'gamma', value: 'unavailable', marker: '' },
+      { label: 'zero', value: '$0.00', marker: '' },
+      { label: 'Unattributed', value: '$1.00', marker: 'e' },
     ],
   }
 }

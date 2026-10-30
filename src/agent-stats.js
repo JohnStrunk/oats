@@ -4,13 +4,11 @@ import { aggregateReportedCostsForDisplay, formatReportedCost } from './usage-ag
 
 export const formatCost = formatReportedCost
 
-// shortcut: the pinned host's sidebar content is 30 columns; revisit if the
-// host layout or sidebar width becomes configurable.
-const HOST_CONTENT_WIDTH = 30
+// Keep labels bounded for a 30-column row even though the pinned host's
+// sidebar is wider. Actual row alignment is delegated to the host's layout.
+const LABEL_ROW_BUDGET = 30
 const MAX_LABEL_WIDTH = 16
-const FULL_INCOMPLETE_MARKER = ' (incomplete)'
-const COMPACT_INCOMPLETE_MARKER = ' (!)'
-const INCOMPLETE_MARKER_LEGEND = '! = incomplete total'
+const INCOMPLETE_MARKER_LEGEND = 'e = incomplete total'
 const TRUNCATION_MARKER = '…'
 // The pinned host renders the horizontal ellipsis in one cell, and it is also
 // the marker appended by safeName below.
@@ -71,30 +69,11 @@ const displayAmount = (item) => item.roundedCost ??
   (item.overflowDirection === 'negative' ? '<-$9999.99' :
     item.overflowDirection === 'positive' ? '>$9999.99' : 'unavailable')
 
-const amountTail = (item) => 2 + displayAmount(item).length
-
-// A fixed-width label (the reserved unattributed bucket) cannot shrink, and an
-// unavailable total leaves little room on the pinned 30-column host. When the
-// full word does not fit, use `(!)` and add the legend so it stays
-// unambiguous. Named rows with a known amount reserve the full marker in their
-// own budget, truncating the label instead so the clearer word is preserved.
-function incompleteMarker(label, item, fixedLabel = false) {
-  if (!item.incomplete) return ''
-  const fullFits = textWidth(label) + amountTail(item) +
-    FULL_INCOMPLETE_MARKER.length <= HOST_CONTENT_WIDTH
-  if (fixedLabel || item.knownCost === null) {
-    return fullFits ? FULL_INCOMPLETE_MARKER : COMPACT_INCOMPLETE_MARKER
-  }
-  return FULL_INCOMPLETE_MARKER
-}
-
 // A row only needs room for its own amount and marker. Budgeting per agent
 // keeps an unrelated expensive incomplete row from shortening every label.
 function labelBudget(item) {
-  const naturalLabel = safeName(item.agent, MAX_LABEL_WIDTH)
-  const tail = amountTail(item) +
-    (item.incomplete ? incompleteMarker(naturalLabel, item).length : 0)
-  return Math.min(MAX_LABEL_WIDTH, Math.max(1, HOST_CONTENT_WIDTH - tail))
+  // Reserve ": ", the amount and the marker cell, even for complete totals.
+  return Math.min(MAX_LABEL_WIDTH, Math.max(1, LABEL_ROW_BUDGET - displayAmount(item).length - 3))
 }
 
 const compareAgents = (a, b) =>
@@ -120,9 +99,7 @@ function displayLabels(agents) {
       labels.set(agent, candidate)
       continue
     }
-    // shortcut: after 36^(budget-1) global collisions a suffix-only label can
-    // exceed a tiny per-agent budget; the costLine guard then compacts the
-    // marker to keep the row within the host width.
+    // Suffix-only labels preserve uniqueness when a suffix fills the budget.
     let label
     do {
       const suffix = ` #${(number++).toString(36)}`
@@ -136,38 +113,43 @@ function displayLabels(agents) {
   return labels
 }
 
-const costLine = (label, item, fixedLabel = false) => {
-  const amount = displayAmount(item)
-  let marker = incompleteMarker(label, item, fixedLabel)
-  // Defensive guard: the per-agent budget should already have reserved this
-  // marker's width.
-  if (marker && textWidth(label) + amountTail(item) + marker.length > HOST_CONTENT_WIDTH) {
-    marker = COMPACT_INCOMPLETE_MARKER
-  }
-  return `${label}: ${amount}${marker}`
-}
-
-export function agentStatsLines(snapshot, sessionID) {
-  if (snapshot.sessionID !== sessionID) return ['Loading session history…']
+function agentStatsContent(snapshot, sessionID) {
+  if (snapshot.sessionID !== sessionID) return [{ text: 'Loading session history…' }]
   const summary = aggregateReportedCostsForDisplay(snapshot)
   // Each row's label is budgeted against its own amount and marker, while
   // collision suffixes are assigned globally so labels stay unique.
   const labels = displayLabels(summary.agents)
-  const lines = summary.agents.map((agent) => costLine(labels.get(agent.agent), agent))
-  if (summary.unattributed) lines.push(costLine('Unattributed', summary.unattributed, true))
-  if (lines.some((line) => line.endsWith(COMPACT_INCOMPLETE_MARKER))) {
-    lines.push(INCOMPLETE_MARKER_LEGEND)
+  const row = (label, item) => ({
+    label,
+    amount: displayAmount(item),
+    // Unavailable is already an explicit indication of an unknown total.
+    marker: item.knownCost !== null && item.incomplete ? 'e' : ' ',
+  })
+  const content = summary.agents.map((agent) => row(labels.get(agent.agent), agent))
+  if (summary.unattributed) content.push(row('Unattributed', summary.unattributed))
+  if (content.some((item) => item.marker === 'e')) {
+    content.push({ text: INCOMPLETE_MARKER_LEGEND })
   }
-  if (lines.length === 0) {
+  if (content.length === 0) {
     const gaps = snapshot.gaps ?? []
     const withheld = gaps.some(gap =>
       !['historical-usage-unavailable', 'retry-history-unavailable'].includes(gap?.kind))
     if (snapshot.errors?.length || withheld || (snapshot.complete !== true && gaps.length === 0)) {
-      lines.push('Session history unavailable')
-    } else lines.push('No agent usage recorded')
+      content.push({ text: 'Session history unavailable' })
+    } else content.push({ text: 'No agent usage recorded' })
   }
-  if (summary.incomplete) lines.push('Summary incomplete')
-  return lines
+  if (summary.incomplete) content.push({ text: 'Summary incomplete' })
+  return content
+}
+
+// A compact textual representation remains available to callers that do not
+// mount the view. The live view uses flex layout instead of this fixed budget.
+export function agentStatsLines(snapshot, sessionID) {
+  return agentStatsContent(snapshot, sessionID).map((item) => {
+    if (item.text) return item.text
+    const spaces = Math.max(1, LABEL_ROW_BUDGET - textWidth(item.label) - 1 - item.amount.length - 1)
+    return `${item.label}:${' '.repeat(spaces)}${item.amount}${item.marker}`
+  })
 }
 
 // The host invokes the slot renderer in its Solid rendering context. These
@@ -179,19 +161,49 @@ export function createAgentStatsView(context, sessionData, input, expanded, togg
 
   const box = createElement('box')
   setProp(box, 'flexDirection', 'column')
+  setProp(box, 'width', '100%')
   const header = createElement('text')
   setProp(header, 'fg', context.theme?.text?.base)
   setProp(header, 'onMouseDown', (event) => {
     if (event.button === 0) { toggle(); event.stopPropagation?.() }
   })
-  insert(header, () => `${expanded() ? '▾' : '▸'} Agent stats`)
+  insert(header, () => `${expanded() ? '▼' : '▶'} Agent stats`)
   insert(box, header)
 
-  const content = createElement('text')
-  setProp(content, 'fg', context.theme?.text?.muted ?? context.theme?.text?.base)
+  const content = createElement('box')
+  setProp(content, 'flexDirection', 'column')
+  setProp(content, 'width', '100%')
+  const color = context.theme?.text?.muted ?? context.theme?.text?.base
   insert(content, () => {
     revision()
-    return expanded() ? agentStatsLines(sessionData.getSnapshot(), input.sessionID).join('\n') : ''
+    if (!expanded()) return []
+    return agentStatsContent(sessionData.getSnapshot(), input.sessionID).map((item) => {
+      if (item.text) {
+        const status = createElement('text')
+        setProp(status, 'fg', color)
+        insert(status, item.text)
+        return status
+      }
+      const row = createElement('box')
+      setProp(row, 'width', '100%')
+      setProp(row, 'height', 1)
+      setProp(row, 'flexDirection', 'row')
+      const label = createElement('text')
+      setProp(label, 'fg', color)
+      setProp(label, 'flexGrow', 1)
+      setProp(label, 'flexShrink', 1)
+      setProp(label, 'minWidth', 0)
+      setProp(label, 'wrapMode', 'none')
+      insert(label, `${item.label}:`)
+      const value = createElement('text')
+      setProp(value, 'fg', color)
+      setProp(value, 'width', item.amount.length + 1)
+      setProp(value, 'flexShrink', 0)
+      insert(value, `${item.amount}${item.marker}`)
+      insert(row, label)
+      insert(row, value)
+      return row
+    })
   })
   insert(box, content)
   return box

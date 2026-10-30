@@ -6,6 +6,12 @@ import {
   makeSidebarHost,
   sessionInfo,
 } from './sidebar-test-host.js'
+import {
+  costRows,
+  legendCount,
+  rowFor,
+  rowsShareValueEnd,
+} from './agent-stats-display-oracle.js'
 
 // The OpenCode TUI host runs with Solid's client build. Rendering also needs
 // OpenTUI's native renderer, which Node 26 exposes through --experimental-ffi.
@@ -68,6 +74,9 @@ async function mount(t, host) {
 }
 
 const frame = (app) => app.captureCharFrame()
+const frameLines = (text) => text.split('\n').map((line) => line.trimStart())
+const frameRows = (text) => costRows(frameLines(text))
+const frameRow = (text, label) => rowFor(frameLines(text), label)
 const command = (host) =>
   host.layers
     .flatMap((layer) => layer.commands ?? [])
@@ -83,7 +92,7 @@ test('contributes a renderable Agent stats section to the session sidebar', opti
   assert.equal(typeof claim.render, 'function')
 
   const rendered = await app.waitForFrame((text) => text.includes('Agent stats'))
-  assert.match(rendered, /Agent stats/)
+  assert.match(rendered, /▼ Agent stats/)
 })
 
 test('starts expanded and shows one combined row per recorded agent name', options, async (t) => {
@@ -102,11 +111,11 @@ test('starts expanded and shows one combined row per recorded agent name', optio
   })
   const { app } = await mount(t, host)
 
-  const rendered = await app.waitForFrame((text) => text.includes('worker: $3.00'))
-  assert.match(rendered, /▾ Agent stats/)
-  assert.match(rendered, /alpha: \$8\.00/)
-  assert.match(rendered, /beta: \$2\.00/)
-  assert.match(rendered, /worker: \$3\.00/)
+  const rendered = await app.waitForFrame((text) => frameRow(text, 'worker')?.value === '$3.00')
+  assert.match(rendered, /▼ Agent stats/)
+  assert.equal(frameRow(rendered, 'alpha').value, '$8.00')
+  assert.equal(frameRow(rendered, 'beta').value, '$2.00')
+  assert.equal(frameRow(rendered, 'worker').value, '$3.00')
   assert.equal(rendered.match(/alpha:/g).length, 1, 'repeated agent names combine into one row')
 })
 
@@ -123,11 +132,11 @@ test('rounds zero, fractional, sub-cent and negative sub-cent costs to cents', o
   })
   const { app } = await mount(t, host)
 
-  const rendered = await app.waitForFrame((text) => text.includes('tiny:'))
-  assert.match(rendered, /zero: \$0\.00/)
-  assert.match(rendered, /fraction: \$1\.25/)
-  assert.match(rendered, /tiny: \$0\.01/)
-  assert.match(rendered, /negative: \$0\.00/)
+  const rendered = await app.waitForFrame((text) => frameRow(text, 'tiny')?.value === '$0.01')
+  assert.equal(frameRow(rendered, 'zero').value, '$0.00')
+  assert.equal(frameRow(rendered, 'fraction').value, '$1.25')
+  assert.equal(frameRow(rendered, 'tiny').value, '$0.01')
+  assert.equal(frameRow(rendered, 'negative').value, '$0.00')
 })
 
 test('sums decimal records exactly and bounds overflowing totals', options, async (t) => {
@@ -143,10 +152,10 @@ test('sums decimal records exactly and bounds overflowing totals', options, asyn
   })
   const { app } = await mount(t, host)
 
-  const rendered = await app.waitForFrame((text) => text.includes('sum: $0.30'))
-  assert.match(rendered, /sum: \$0\.30/)
-  assert.match(rendered, /over: >\$9999\.99/)
-  assert.match(rendered, /under: <-\$9999\.99/)
+  const rendered = await app.waitForFrame((text) => frameRow(text, 'sum')?.value === '$0.30')
+  assert.equal(frameRow(rendered, 'sum').value, '$0.30')
+  assert.equal(frameRow(rendered, 'over').value, '>$9999.99')
+  assert.equal(frameRow(rendered, 'under').value, '<-$9999.99')
 })
 
 test('presents a blocked first read as loading rather than empty', options, async (t) => {
@@ -209,17 +218,16 @@ test('keeps known partial and unattributed costs visible as incomplete', options
   const { app } = await mount(t, host)
 
   const rendered = await app.waitForFrame((text) =>
-    text.includes('Unattributed: $3.00'),
+    frameRow(text, 'Unattributed')?.value === '$3.00',
   )
-  assert.match(rendered, /partial: \$2\.00 \(incomplete\)/)
-  assert.match(rendered, /unknown: unavailable \(!\)/)
+  assert.equal(frameRow(rendered, 'partial').value, '$2.00')
+  assert.equal(frameRow(rendered, 'partial').marker, 'e')
+  assert.equal(frameRow(rendered, 'unknown').value, 'unavailable')
+  assert.equal(frameRow(rendered, 'unknown').marker, 'blank')
+  assert.equal(frameRow(rendered, 'Unattributed').value, '$3.00')
+  assert.equal(frameRow(rendered, 'Unattributed').marker, 'blank')
   assert.ok(!rendered.includes('unknown: $0.00'))
-  assert.equal(
-    (rendered.match(/! = incomplete total/g) ?? []).length,
-    1,
-    'the compact marker must have exactly one legend',
-  )
-  assert.match(rendered, /Unattributed: \$3\.00/)
+  assert.equal(legendCount(frameLines(rendered)), 1, 'one e marker yields one legend')
   assert.match(rendered, /Summary incomplete/)
 })
 
@@ -229,11 +237,11 @@ test('updates a visible total when settled usage changes', options, async (t) =>
   })
   const { app } = await mount(t, host)
 
-  await app.waitForFrame((text) => text.includes('alpha: $1.00'))
+  await app.waitForFrame((text) => frameRow(text, 'alpha')?.value === '$1.00')
   host.settleStep({ messageID: 'live-step', agent: 'alpha', cost: 4 })
 
-  const updated = await app.waitForFrame((text) => text.includes('alpha: $5.00'))
-  assert.match(updated, /alpha: \$5\.00/)
+  const updated = await app.waitForFrame((text) => frameRow(text, 'alpha')?.value === '$5.00')
+  assert.equal(frameRow(updated, 'alpha').value, '$5.00')
 })
 
 test('collapsing hides rows and expanding via mouse or keyboard shows them again', options, async (t) => {
@@ -242,15 +250,15 @@ test('collapsing hides rows and expanding via mouse or keyboard shows them again
   })
   const { app } = await mount(t, host)
 
-  await app.waitForFrame((text) => text.includes('alpha: $1.00'))
+  await app.waitForFrame((text) => frameRow(text, 'alpha')?.value === '$1.00')
 
   await app.mockMouse.click(1, 0)
   const collapsed = await app.waitForFrame((text) => !text.includes('alpha:'))
-  assert.match(collapsed, /▸ Agent stats/)
+  assert.match(collapsed, /▶ Agent stats/)
 
   await app.mockMouse.click(1, 0)
-  const expanded = await app.waitForFrame((text) => text.includes('alpha: $1.00'))
-  assert.match(expanded, /▾ Agent stats/)
+  const expanded = await app.waitForFrame((text) => frameRow(text, 'alpha')?.value === '$1.00')
+  assert.match(expanded, /▼ Agent stats/)
 
   const toggle = command(host)
   assert.ok(toggle, 'the plugin must register a keyboard command for Agent stats')
@@ -258,8 +266,8 @@ test('collapsing hides rows and expanding via mouse or keyboard shows them again
   await app.waitForFrame((text) => !text.includes('alpha:'))
 
   toggle.run()
-  const reopened = await app.waitForFrame((text) => text.includes('alpha: $1.00'))
-  assert.match(reopened, /▾ Agent stats/)
+  const reopened = await app.waitForFrame((text) => frameRow(text, 'alpha')?.value === '$1.00')
+  assert.match(reopened, /▼ Agent stats/)
 })
 
 test('a collapsed section still reflects settled usage when reopened', options, async (t) => {
@@ -268,17 +276,18 @@ test('a collapsed section still reflects settled usage when reopened', options, 
   })
   const { app } = await mount(t, host)
 
-  await app.waitForFrame((text) => text.includes('alpha: $1.00'))
+  await app.waitForFrame((text) => frameRow(text, 'alpha')?.value === '$1.00')
   await app.mockMouse.click(1, 0)
   await app.waitForFrame((text) => !text.includes('alpha:'))
 
   host.settleStep({ messageID: 'collapsed-live', agent: 'alpha', cost: 4 })
   await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.ok(!frame(app).includes('alpha: $5.00'))
+  assert.ok(!frame(app).includes('alpha:'))
+  assert.equal(frameRow(frame(app), 'alpha'), null)
 
   await app.mockMouse.click(1, 0)
-  const reopened = await app.waitForFrame((text) => text.includes('alpha: $5.00'))
-  assert.match(reopened, /alpha: \$5\.00/)
+  const reopened = await app.waitForFrame((text) => frameRow(text, 'alpha')?.value === '$5.00')
+  assert.equal(frameRow(reopened, 'alpha').value, '$5.00')
 })
 
 test('switching sessions suppresses stale totals and preserves the expansion choice', options, async (t) => {
@@ -291,7 +300,7 @@ test('switching sessions suppresses stale totals and preserves the expansion cho
   })
   const { app } = await mount(t, host)
 
-  await app.waitForFrame((text) => text.includes('alpha: $1.00'))
+  await app.waitForFrame((text) => frameRow(text, 'alpha')?.value === '$1.00')
   await app.mockMouse.click(1, 0)
   await app.waitForFrame((text) => !text.includes('alpha:'))
 
@@ -303,7 +312,7 @@ test('switching sessions suppresses stale totals and preserves the expansion cho
 
   const loading = frame(app)
   assert.ok(!loading.includes('alpha:'), 'the previous session total must not remain visible')
-  assert.match(loading, /▸ Agent stats/, 'the collapsed choice must survive the session change')
+  assert.match(loading, /▶ Agent stats/, 'the collapsed choice must survive the session change')
 
   await app.mockMouse.click(1, 0)
   const expandedLoading = await app.waitForFrame((text) =>
@@ -312,7 +321,7 @@ test('switching sessions suppresses stale totals and preserves the expansion cho
   assert.ok(!expandedLoading.includes('alpha:'), 'loading must not expose stale totals')
 
   blocked.release()
-  const switched = await app.waitForFrame((text) => text.includes('new-agent: $5.00'))
+  const switched = await app.waitForFrame((text) => frameRow(text, 'new-agent')?.value === '$5.00')
   assert.ok(!switched.includes('alpha:'), 'the previous session total must not return')
 })
 
@@ -322,7 +331,7 @@ test('cleanup releases the sidebar contribution and host subscriptions', options
   })
   const { app, cleanup } = await mount(t, host)
 
-  await app.waitForFrame((text) => text.includes('alpha: $1.00'))
+  await app.waitForFrame((text) => frameRow(text, 'alpha')?.value === '$1.00')
   assert.equal(host.claims.length, 1)
   assert.ok(host.listenerCount('session.step.ended') > 0)
 
