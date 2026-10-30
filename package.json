@@ -26,7 +26,7 @@
     "@actions/expressions": "0.3.61",
     "@cucumber/cucumber": "13.3.0",
     "@opentui/core": "0.6.6",
-    "@opentui/solid": "0.5.17",
+    "@opentui/solid": "0.6.6",
     "fast-check": "4.10.2",
     "json5": "2.2.3",
     "markdownlint-cli2": "0.24.0",
