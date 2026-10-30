@@ -48,6 +48,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { configuredHostVersion } from "./host_pin_helper.js";
+
 const execFileAsync = promisify(execFile);
 
 export const REPO_ROOT = path.resolve(
@@ -61,7 +63,6 @@ export const SUPERVISOR_PATH = fileURLToPath(
 export const TIMEOUT_SECONDS = 30;
 export const CONTROL_OBSERVATION_SECONDS = 3;
 export const MAX_OUTPUT = 4 * 1024 * 1024;
-export const TESTED_VERSION = "2.0.32";
 export const OUTPUT_LIMIT_MESSAGE = "OpenCode TUI exceeded the output limit";
 
 const TERMINAL_COLUMNS = 120;
@@ -187,6 +188,7 @@ function isExecutableFile(candidate) {
 }
 
 async function supportedHostVersion(executable) {
+  const expected = configuredHostVersion();
   if (!findExecutable(executable)) {
     throw new Error(`OpenCode executable not found: ${executable}`);
   }
@@ -203,8 +205,8 @@ async function supportedHostVersion(executable) {
   }
   const version = stdout.trim();
   const parsed = /^(?:opencode\s+)?v?(\d+\.\d+\.\d+)$/.exec(version);
-  if (!parsed || parsed[1] !== TESTED_VERSION) {
-    throw new Error(`Expected OpenCode v${TESTED_VERSION}, got: ${version}`);
+  if (!parsed || parsed[1] !== expected) {
+    throw new Error(`Expected OpenCode v${expected}, got: ${version}`);
   }
   return version;
 }

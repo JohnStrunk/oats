@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { requireRealHost } from '../real-host-tests/prerequisites.js'
+import { configuredHostVersion } from '../steps/host_pin_helper.js'
+
+const PIN = configuredHostVersion()
 
 function temp(t) {
   const dir = mkdtempSync(join(existsSync('/tmp/opencode') ? '/tmp/opencode' : tmpdir(), 'oats-host-contract-'))
@@ -40,7 +43,7 @@ test('required host runner rejects skipped, todo, failing, empty and unrelated t
 test('system configuration and uninspectable sources fail instead of skipping', t => {
   const dir = temp(t)
   const host = join(dir, 'opencode')
-  writeFileSync(host, "#!/bin/sh\necho 'opencode v2.0.32'\n", { mode: 0o700 })
+  writeFileSync(host, `#!/bin/sh\necho 'opencode v${PIN}'\n`, { mode: 0o700 })
   const absent = join(dir, 'absent')
   assert.deepEqual(requireRealHost(host, { sources: [absent], platform: 'linux' }), { executable: host })
   const config = join(dir, 'system-config')

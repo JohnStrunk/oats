@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { getRepoRoot } from '../workflow_helper.js'
 import { checkNodeVersions } from '../node_version_helper.js'
+import { isExactRelease } from '../host_pin_helper.js'
 import { join } from 'node:path'
 
 Then('the CI test job shall run the real-host contract test with the installed pinned host', function () {
@@ -29,5 +30,6 @@ Then('the CI test job shall run the real-host contract test with the installed p
   }
   assert.equal(steps[run].env?.OATS_OPENCODE, '${{ github.workspace }}/.github/tooling/opencode-host/node_modules/.bin/opencode')
   const hostPackage = JSON.parse(readFileSync(join(getRepoRoot(), '.github/tooling/opencode-host/package.json'), 'utf8'))
-  assert.equal(hostPackage.dependencies['@opencode/cli'], '2.0.32')
+  const pin = hostPackage.dependencies?.['@opencode/cli']
+  assert(isExactRelease(pin), `The CI host declaration must be an exact @opencode/cli release, got ${JSON.stringify(pin)}`)
 })
