@@ -182,8 +182,8 @@ reported no vulnerabilities for that consumer dependency tree. This does not
 audit the host executable or establish compatibility with other host releases.
 The OpenTUI packages in this checkout are development-only test dependencies;
 their Solid peer is overridden locally and that override does not apply to
-npm consumers. Do not install OpenTUI 0.5.17 as a consumer dependency merely
-to load OATS: its strict Solid peer can pull an affected older release.
+npm consumers. Do not install these OpenTUI packages as consumer dependencies
+merely to load OATS: their strict Solid peer can pull an affected older release.
 
 ## Session data access
 

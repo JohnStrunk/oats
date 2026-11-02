@@ -179,8 +179,8 @@ test('an empty read is not presented as loading or as unavailable', options, asy
   const host = makeSidebarHost({ messages: { root: [] } })
   const session = await mount(t, host)
 
-  const rendered = await session.app.waitForFrame(
-    (text) => !/loading session history/i.test(text),
+  const rendered = await session.app.waitForFrame((text) =>
+    text.includes('No agent usage recorded'),
   )
   // Benign gaps (the pinned host cannot prove retry usage) still describe an
   // empty history; withheld or failed history takes the unavailable path.
