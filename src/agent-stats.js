@@ -2,6 +2,13 @@ import { createSignal, onCleanup } from 'solid-js'
 import { createElement, insert, setProp } from '@opentui/solid'
 import { aggregateReportedCostsForDisplay, formatReportedCost } from './usage-aggregation.js'
 import { openUsageDetailsModal } from './usage-details.js'
+import {
+  REPLACEMENT_CHARACTER,
+  TRUNCATION_MARKER,
+  TRUNCATION_MARKER_WIDTH,
+  charWidth,
+  textWidth,
+} from './display-width.js'
 
 export const formatCost = formatReportedCost
 
@@ -10,31 +17,6 @@ export const formatCost = formatReportedCost
 const LABEL_ROW_BUDGET = 30
 const MAX_LABEL_WIDTH = 16
 const INCOMPLETE_MARKER_LEGEND = 'e = incomplete total'
-const TRUNCATION_MARKER = '…'
-// The pinned host renders the horizontal ellipsis in one cell, and it is also
-// the marker appended by safeName below.
-const TRUNCATION_MARKER_WIDTH = 1
-// safeName replaces disallowed code points with U+FFFD, which the pinned host
-// also renders in one cell.
-const REPLACEMENT_CHARACTER = '�'
-
-// Treat every other non-ASCII code point as two cells. Enumerating wide ranges
-// by hand missed assigned ranges (for example Kana Supplement U+1B000), and a
-// single missed wide code point can clip the amount or status marker. Assuming
-// two cells is conservative: a narrow non-ASCII name is truncated a little
-// sooner, but the row can never exceed the host width.
-function charWidth(char) {
-  if (char === TRUNCATION_MARKER) return TRUNCATION_MARKER_WIDTH
-  if (char === REPLACEMENT_CHARACTER) return 1
-  const code = char.codePointAt(0)
-  return code >= 0x20 && code <= 0x7e ? 1 : 2
-}
-
-function textWidth(text) {
-  let width = 0
-  for (const char of text) width += charWidth(char)
-  return width
-}
 
 // Agent names originate in session history. Keep control characters from
 // changing the terminal layout or injecting terminal escape sequences.
