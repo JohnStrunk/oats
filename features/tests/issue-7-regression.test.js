@@ -28,6 +28,9 @@ function prepareRepository(t, mutateWorkflow = workflow => workflow) {
   const dir = temporaryDirectory(t)
   cpSync(join(root, 'features/steps'), join(dir, 'features/steps'), { recursive: true })
   cpSync(join(root, 'features/tests'), join(dir, 'features/tests'), { recursive: true })
+  // The imported step support graph uses the real-host display-width oracle.
+  mkdirSync(join(dir, 'features/real-host-tests'), { recursive: true })
+  cpSync(join(root, 'features/real-host-tests/terminal_screen.js'), join(dir, 'features/real-host-tests/terminal_screen.js'))
   // The imported support graph statically imports application modules, so the
   // disposable checkout needs its own copy rather than the real checkout.
   // Root tui.js is the package's public entrypoint; acceptance steps import it

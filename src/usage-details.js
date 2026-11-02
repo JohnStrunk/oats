@@ -1,5 +1,6 @@
-import { createEffect, createSignal, onCleanup } from 'solid-js'
+import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
 import { createElement, insert, setProp } from '@opentui/solid'
+import { measureEditText } from '@opentui/core'
 import { aggregateUsageDetails, renderPairTable } from './pricing-attribution.js'
 
 let cachedModels = []
@@ -96,19 +97,14 @@ export function createUsageDetailsModalView(context, sessionData, input) {
   onCleanup(unsubscribe)
 
   const outer = createElement('box')
-  setProp(outer, 'width', '100%')
   setProp(outer, 'height', 30)
   setProp(outer, 'maxHeight', 30)
+  setProp(outer, 'maxWidth', '100%')
 
-  const scroll = createElement('scrollbox')
-  setProp(scroll, 'flexDirection', 'column')
-  setProp(scroll, 'flexGrow', 1)
-  setProp(scroll, 'focused', true)
-  activeScroll = scroll
-
-  const textNode = createElement('text')
-  setProp(textNode, 'fg', context.theme?.text?.base)
-  insert(textNode, () => {
+  // The scrollbox lays out its viewport and vertical scrollbar side by side, so
+  // the box must hug the content for the scrollbar to sit beside the table
+  // instead of at the far edge of the dialog.
+  const detailsText = createMemo(() => {
     revision()
     const snapshot = sessionData.getSnapshot()
     const currentModels = getModels(context)
@@ -118,6 +114,30 @@ export function createUsageDetailsModalView(context, sessionData, input) {
     }
     return pairs.map(renderPairTable).join('\n\n')
   })
+  // Measure with the host's own width method instead of estimating non-ASCII
+  // code points conservatively, so narrow labels such as "é" do not leave a gap
+  // between the widest rendered line and the scrollbar. The extra cell holds
+  // the vertical scrollbar beside the content.
+  const contentWidth = () => {
+    const widthMethod = context.renderer.widthMethod
+    return detailsText()
+      .split('\n')
+      .reduce((max, line) => Math.max(max, measureEditText(line, { widthMethod })), 1) + 1
+  }
+  // setProp applies a plain value immediately and does not subscribe to
+  // signals. Set the initial width synchronously so the first frame is laid
+  // out correctly, then update it from an effect as usage records change.
+  setProp(outer, 'width', contentWidth())
+  createEffect(() => setProp(outer, 'width', contentWidth()))
+
+  const scroll = createElement('scrollbox')
+  setProp(scroll, 'flexGrow', 1)
+  setProp(scroll, 'focused', true)
+  activeScroll = scroll
+
+  const textNode = createElement('text')
+  setProp(textNode, 'fg', context.theme?.text?.base)
+  insert(textNode, detailsText)
   insert(scroll, textNode)
   insert(outer, scroll)
   return outer
