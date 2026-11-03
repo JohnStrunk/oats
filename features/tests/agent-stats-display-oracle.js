@@ -85,6 +85,31 @@ export function legendCount(lines) {
   return lines.filter((line) => line.trim() === INCOMPLETE_LEGEND).length
 }
 
+// The Agent and Model summaries are independent UI boundaries. Slice between
+// their rendered disclosure headings or a blank separator so a legend in one
+// cannot satisfy the other's oracle, or count unrelated footer text. This
+// deliberately parses the captured frame rather than importing either
+// production summary renderer.
+const SUMMARY_HEADING = /^\s*[▼▶▾▸]\s+(Agent|Model) stats(?:\s+\(details\))?\s*$/
+
+export function summarySectionLines(lines, section) {
+  const start = lines.findIndex((line) => SUMMARY_HEADING.exec(line)?.[1] === section)
+  if (start < 0) return []
+
+  const nextSection = lines.findIndex((line, index) =>
+    index > start && (!line.trim() || SUMMARY_HEADING.test(line)),
+  )
+  return lines.slice(start + 1, nextSection < 0 ? undefined : nextSection)
+}
+
+export function rowsInSummarySection(lines, section) {
+  return costRows(summarySectionLines(lines, section))
+}
+
+export function legendCountInSummarySection(lines, section) {
+  return legendCount(summarySectionLines(lines, section))
+}
+
 export function rowsShareValueEnd(rows) {
   return rows.length > 0 && rows.every((row) => row.valueEnd === rows[0].valueEnd)
 }

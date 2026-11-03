@@ -4,10 +4,16 @@ OATS is a minimal OpenCode v2 TUI plugin, intended to help explain token usage
 and estimated costs across agents, subagents, and models.
 
 **Current behavior:** a brief **OATS loaded** startup toast confirms that the
-plugin loaded. The collapsible **Agent stats** session-sidebar section shows
-known OpenCode-reported costs by recorded agent name for the displayed session
-and its descendants. Its **(details)** link opens a live breakdown by agent and
-model, with token counts and estimated category costs at current model prices.
+plugin loaded. The session sidebar has sibling, independently collapsible
+**Agent stats** and **Model stats** sections. Agent stats shows known
+OpenCode-reported costs by recorded agent name; Model stats groups known
+reported costs by recorded model ID, combining the same ID across providers and
+agents. Both sections cover the displayed session and its descendants. Work
+without a usable recorded model ID remains **Unattributed**. Model stats uses
+each record's model ID, not the currently selected model, and shows reported
+costs rather than price estimates. The **(details)** link in Agent stats opens
+a live breakdown by agent and model, with token counts and estimated category
+costs at current model prices.
 
 ## Try the local plugin
 
@@ -77,23 +83,24 @@ There is no project-local `cli.json`. See the official V2
    showing its total known reported cost, including nested delegated work.
    Repeated invocations of the same agent are combined, even across models.
    Costs are right-aligned in a shared column.
-3. Click the **Agent stats** title to collapse or expand its contents. For
+3. Click the **Agent stats** title to collapse or expand only that section. For
    keyboard interaction, open OpenCode's command palette and select
-   **Toggle Agent stats**. The heading uses the host's disclosure indicators:
-   `▼` when expanded and `▶` when collapsed.
+   **Toggle Agent stats**; this command affects Agent stats only. The heading
+   uses the host's disclosure indicators: `▼` when expanded and `▶` when
+   collapsed.
 4. Switch sessions to see costs for the newly displayed session subtree. The
-   expansion choice is shared across sessions for this application lifetime;
-   restarting the application defaults to expanded again.
+   Agent stats expansion choice is shared across sessions for this application
+   lifetime, independently of Model stats; restarting the application defaults
+   it to expanded.
 
 Available history appears when the session opens, and costs update as OpenCode
-settles usage at step boundaries, not for every streamed token. Collapsing the
-section does not leave stale data when it is reopened. Unrelated sessions and
-the previously displayed session subtree are not included in the new scope.
-
-The sidebar distinguishes loading, confirmed empty history, and unavailable
-history. A complete-looking agent row is not proof that history is complete.
-Summary-level history gaps without any row-level `e` marker are not separately
-indicated in the sidebar.
+settles usage at step boundaries, not for every streamed token. Both sections
+distinguish loading, confirmed-empty history, and unavailable history. A
+complete-looking row is not proof that history is complete. Summary-level
+history gaps without any row-level `e` marker are not separately indicated in
+either section. Collapsing a section does not leave stale data when it is
+reopened. Unrelated sessions and the previously displayed session subtree are
+not included in the new scope.
 
 Observed behavior in OpenCode 2.0.32 is that historical events are typically
 not persisted; this is a version-specific observation, not established for
@@ -102,24 +109,25 @@ unreconstructible after an event is lost. Persisted records do not guarantee a
 complete execution history, and refreshing cannot recover data the host no
 longer has.
 
-Work without a recorded agent name is identified as unattributed rather than
-silently dropped or assigned to another agent. **Unattributed** rows use the
-same alignment and completeness formatting as named-agent rows.
+Work without a recorded agent name remains unattributed rather than silently
+dropped or assigned to another agent in Agent stats. **Unattributed** rows use
+the same alignment and completeness formatting as named-agent rows.
 
-Known incomplete row totals remain visible with a lowercase `e` marker. When
-at least one row has `e`, the sidebar displays the legend `e = estimated`
-exactly once; it omits the legend when no row has `e`. Unknown totals display
-as `unavailable`, without an `e` marker.
+Known incomplete Agent stats row totals remain visible with a lowercase `e`
+marker. When at least one Agent stats row has `e`, that section displays the
+legend `e = estimated` exactly once; it omits the legend when no Agent stats
+row has `e`. Unknown totals display as `unavailable`, without an `e` marker.
 
 Each agent row uses its own available label width. Safe names are shown in full
 when they fit and ellipsized only when needed. Labels are disambiguated only
 when their fitted forms collide; disambiguation does not change attribution to
 the original recorded names.
 
-**Reported costs only:** these values are informational OpenCode-reported
-costs, not estimates derived from token rates or billing guarantees. A reported
-zero does not prove that the provider charged nothing. Missing history and
-uncertain provenance can limit totals; see [Session data access](#session-data-access).
+**Reported costs only:** both sidebar sections show informational
+OpenCode-reported costs, not estimates derived from token rates or billing
+guarantees. A reported zero does not prove that the provider charged nothing.
+Missing history and uncertain provenance can limit totals; see
+[Session data access](#session-data-access).
 Reported numeric costs are added with accurate decimal arithmetic before
 display rounding: `$0.10 + $0.20` displays as `$0.30`, not `$0.31` from a binary
 floating-point addition artifact. For each finite normalized host `Number`,
@@ -140,6 +148,32 @@ when a total is outside the display range.
 The compact sidebar shows reported costs; token breakdowns and current-price
 estimates are available in the details modal below. Base-versus-total
 comparisons remain planned.
+
+### Try Model stats
+
+1. Open the session sidebar for a session with available history. Find
+   **Model stats** beside **Agent stats**; it starts expanded.
+2. Each row shows the total known OpenCode-reported cost for one recorded model
+   ID in the displayed session subtree, including nested delegated work.
+   Matching IDs combine across providers and agents. Model stats uses the ID on
+   each usage record, not the currently selected model or model-catalogue
+   metadata. Work without a usable recorded model ID remains in an
+   **Unattributed** row rather than being dropped or assigned to another ID.
+   Model stats reports recorded costs only; it does not calculate price
+   estimates.
+3. Click the **Model stats** title to collapse or expand this section without
+   changing Agent stats. For keyboard interaction, open OpenCode's command
+   palette and select **Toggle Model stats**. The heading uses the host's
+   disclosure indicators: `▼` when expanded and `▶` when collapsed.
+4. Switch sessions to see costs for the new session subtree. Model stats has
+   its own expansion choice, independent of Agent stats and shared across
+   sessions for this application lifetime; restarting the application defaults
+   it to expanded.
+
+Known incomplete Model stats row totals remain visible with a lowercase `e`
+marker. Model stats displays its own `e = estimated` legend exactly once when
+at least one model row has `e`; it omits the legend when no model row has `e`.
+Unknown totals display as `unavailable`, without an `e` marker.
 
 ### Usage details
 
@@ -186,7 +220,8 @@ events and uncertain fork provenance, also apply to these details.
 The supported host supplies the shared Solid and OpenTUI runtime used by the
 plugin. OATS does not install OpenTUI as a production dependency. Installing a
 packed OATS package in a fresh npm consumer was verified against the pinned
-2.0.32 TUI, including rendering and the palette toggle; `npm audit --omit=dev`
+2.0.32 TUI, including rendering and the Agent stats palette toggle;
+`npm audit --omit=dev`
 reported no vulnerabilities for that consumer dependency tree. This does not
 audit the host executable or establish compatibility with other host releases.
 The OpenTUI packages in this checkout are development-only test dependencies;
@@ -230,15 +265,23 @@ Repeated invocations and work across models combine under the same name. Each
 individual reported cost is counted once under the agent that performed the
 work, without adding delegated tree totals again.
 
+Model stats groups reported costs by recorded model ID in the same session
+subtree, combining matching IDs across providers and agents. It uses the ID on
+each usage record rather than the currently selected model or model-catalogue
+metadata. Work without a usable recorded model ID remains in an **Unattributed**
+row, preserving its known reported cost instead of assigning it to another
+model ID or dropping it. Model stats does not derive provider-price estimates.
+
 Summaries retain known totals and indicate incompleteness. Missing or ambiguous
-cost is not treated as zero; an agent with no known cost has no known total.
-Work without a recorded agent name remains unattributed, preserving its known
-cost rather than assigning it to another agent or dropping it. Any unattributed
-work makes the overall summary incomplete, even when its cost is known. Unknown
-session-wide data-access gaps mark only the overall summary incomplete; each
-agent's incompleteness flag reflects only that agent's available records. An
-unset agent flag therefore does not guarantee that all of the agent's work is
-present when the overall summary is incomplete.
+cost is not treated as zero; an agent or model group with no known cost has no
+known total. In Agent stats, work without a recorded agent name remains
+unattributed, preserving its known cost rather than assigning it to another
+agent or dropping it. Any such unattributed work makes the Agent stats summary
+incomplete, even when its cost is known. Unknown session-wide data-access gaps
+mark only the overall Agent stats summary incomplete; each agent's
+incompleteness flag reflects only that agent's available records. An unset
+agent flag therefore does not guarantee that all of the agent's work is present
+when the overall summary is incomplete.
 
 Aggregation runs on demand from each latest scoped session-data snapshot; it
 does not itself subscribe to updates or maintain reactive summaries. The sidebar
@@ -246,14 +289,14 @@ requests summaries as its scoped data changes. Invoking aggregation again
 with the latest snapshot reflects record additions and updates without duplicate
 contributions or retained contributions from earlier snapshots. The supplied
 scope covers the displayed session subtree, excluding unrelated sessions and
-the previously displayed subtree. No displayed session means no agent summaries.
+the previously displayed subtree. No displayed session means no sidebar summaries.
 
 For internal consumers, `createUsageAggregation(sessionData).getSummary()` reads
 the latest snapshot on each call; this facade is not a public package API.
 
-The sidebar uses this internal capability to sum reported costs, not estimates
-derived from token rates. It does not guarantee billing accuracy. A reported
-zero does not prove that the provider charged nothing.
+Both sidebar sections use this internal capability to sum reported costs, not
+estimates derived from token rates. They do not guarantee billing accuracy. A
+reported zero does not prove that the provider charged nothing.
 
 ## Planned experience
 
@@ -276,9 +319,9 @@ The project uses an agent-assisted, specification-driven workflow:
 4. Implement behavior against those specifications, then verify and audit it.
 
 Feature specifications follow the conventions in
-[features/AGENTS.md](features/AGENTS.md). The sidebar presents reported costs;
-the details modal adds token breakdowns and current-price estimates. The items
-under Planned experience remain future work.
+[features/AGENTS.md](features/AGENTS.md). Agent stats and Model stats present
+reported costs; the details modal adds token breakdowns and current-price
+estimates. The items under Planned experience remain future work.
 
 ## Development and verification
 

@@ -10,8 +10,8 @@ export { agentIncomplete, amountFor, collapsedWithoutContent, displayedValue, hi
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const model = { providerID: 'fixture-provider', id: 'fixture-model' }
 const tokens = { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } }
-const msg = (id, agent, cost) => ({
-  id, type: 'assistant', time: { created: 1, completed: 2 }, content: [], model, tokens,
+const msg = (id, agent, cost, recordedModel = model, recordedTokens = tokens) => ({
+  id, type: 'assistant', time: { created: 1, completed: 2 }, content: [], model: recordedModel, tokens: recordedTokens,
   ...(agent == null ? {} : { agent }),
   ...(cost == null ? {} : { cost }),
 })
@@ -38,6 +38,125 @@ export function makeSidebarFixture(name) {
       fixture.sessions.push(session('new-root'))
       fixture.messages['new-root'] = [msg('new-m', 'new-agent', 5)]
       fixture.blockRoot = name === 'blocked old session'
+      break
+    case 'model switch':
+      fixture.sessions = [session('root'), session('new-root')]
+      fixture.messages = {
+        root: [msg('old-model-record', 'alpha', 1, { providerID: 'provider-one', id: 'old-model' })],
+        'new-root': [msg('new-model-record', 'beta', 5, { providerID: 'provider-two', id: 'new-model' })],
+      }
+      break
+    case 'model history':
+      fixture.messages = {
+        root: [
+          msg('root-shared-one', 'alpha', 1, { providerID: 'provider-one', id: 'shared-model' }),
+          msg('root-shared-two', 'beta', 2, { providerID: 'provider-two', id: 'shared-model' }),
+          msg('root-model', 'alpha', 2, { providerID: 'provider-one', id: 'root-model' }),
+        ],
+        child: [msg('child-shared', 'worker', 1, { providerID: 'provider-three', id: 'shared-model' })],
+        grandchild: [
+          msg('grandchild-shared', 'nested', 2, { providerID: 'provider-four', id: 'shared-model' }),
+          msg('grandchild-model', 'nested', 4, { providerID: 'provider-three', id: 'nested-model' }),
+        ],
+        child2: [msg('sibling-model', 'worker-two', 5, { providerID: 'provider-one', id: 'sibling-model' })],
+        other: [msg('outside-model', 'other', 100, { providerID: 'provider-one', id: 'outside-model' })],
+      }
+      fixture.models = [{
+        providerID: 'catalog-provider', id: 'currently-selected-model', name: 'currently-selected-model',
+        cost: { input: 100, output: 100, cache: { read: 100, write: 100 } },
+      }]
+      break
+    case 'model incomplete':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [
+        msg('model-zero', 'zero-agent', 0, { providerID: 'provider', id: 'zero-model' }),
+        msg('model-partial-known', 'partial-agent', 2, { providerID: 'provider-one', id: 'partial-model' }),
+        msg('model-partial-missing', 'partial-agent', null, { providerID: 'provider-two', id: 'partial-model' }),
+        msg('model-unknown', 'unknown-agent', null, { providerID: 'provider', id: 'unknown-model' }),
+        msg('model-unattributed-known', 'unattributed-agent', 3, null),
+        msg('model-unattributed-missing', 'another-agent', null, { providerID: 'provider', id: '' }),
+      ] }
+      break
+    case 'model unattributed':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [
+        msg('named-model', 'alpha', 1, { providerID: 'provider', id: 'named-model' }),
+        msg('missing-model', 'beta', 2, null),
+        msg('blank-model', 'gamma', 3, { providerID: 'provider', id: '' }),
+        msg('whitespace-model', 'delta', null, { providerID: 'provider', id: '   ' }),
+        msg('non-string-model', 'epsilon', 4, { providerID: 'provider', id: 17 }),
+        msg('provider-only-model', 'zeta', 0, { providerID: 'provider' }),
+        msg('literal-unattributed-model', 'eta', 7, { providerID: 'provider', id: 'Unattributed' }),
+      ] }
+      break
+    case 'model rounding':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [
+        msg('model-zero', 'zero-agent', 0, { providerID: 'provider', id: 'zero-model' }),
+        msg('model-exact', 'exact-agent', 1.25, { providerID: 'provider', id: 'exact-model' }),
+        msg('model-sub-cent', 'tiny-agent', 0.000001, { providerID: 'provider', id: 'sub-cent-model' }),
+        msg('model-sum-one', 'alpha', 0.1, { providerID: 'provider-one', id: 'sum-model' }),
+        msg('model-sum-two', 'beta', 0.2, { providerID: 'provider-two', id: 'sum-model' }),
+        msg('model-negative', 'negative-agent', -0.01001, { providerID: 'provider', id: 'negative-model' }),
+      ] }
+      break
+    case 'model overflow':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [
+        msg('model-positive-bound', 'bound-agent', 10000, { providerID: 'provider', id: 'positive-bound' }),
+        msg('model-negative-bound', 'bound-agent', -10000, { providerID: 'provider', id: 'negative-bound' }),
+        msg('model-partial-bound', 'partial-bound-agent', 10000, { providerID: 'provider', id: 'partial-bound' }),
+        msg('model-partial-bound-missing', 'partial-bound-agent', null, { providerID: 'provider', id: 'partial-bound' }),
+        msg('model-at-limit', 'limit-agent', 9999.99, { providerID: 'provider', id: 'at-limit' }),
+        msg('model-just-over-limit', 'over-limit-agent', 9999.990001, { providerID: 'provider', id: 'just-over-limit' }),
+      ] }
+      break
+    case 'model reported cost':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [msg(
+        'reported-model-cost', 'alpha', 1.234,
+        { providerID: 'recorded-provider', id: 'reported-model' },
+        { input: 1_000_000, output: 1_000_000, reasoning: 0, cache: { read: 0, write: 0 } },
+      )] }
+      fixture.models = [
+        {
+          providerID: 'recorded-provider', id: 'reported-model', name: 'reported-model',
+          cost: { input: 1000, output: 1000, cache: { read: 1000, write: 1000 } },
+        },
+        {
+          providerID: 'active-provider', id: 'currently-selected-model', name: 'currently-selected-model',
+          cost: { input: 2000, output: 2000, cache: { read: 2000, write: 2000 } },
+        },
+      ]
+      break
+    case 'model name sizing': {
+      fixture.sessions = [session('root')]
+      const sharedPrefix = 'abcdefghijklmnopqrstuvwx0123456789'
+      fixture.messages = { root: [
+        msg('model-name-short', 'short-agent', 1, { providerID: 'provider', id: 'compact-model' }),
+        msg('model-name-wide', 'wide-agent', 4, { providerID: 'provider', id: '代理模型' }),
+        msg('model-name-long-alpha', 'long-alpha-agent', 2, { providerID: 'provider', id: `${sharedPrefix}-alpha` }),
+        msg('model-name-long-beta', 'long-beta-agent', 3, { providerID: 'provider', id: `${sharedPrefix}-beta` }),
+      ] }
+      break
+    }
+    case 'model whitespace collision':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [
+        msg('model-space-id', 'space-agent', 1, { providerID: 'provider-one', id: 'shared model' }),
+        msg('model-nbsp-id', 'nbsp-agent', 2, { providerID: 'provider-two', id: 'shared\u00a0model' }),
+      ] }
+      break
+    case 'model label safety':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [
+        msg('model-terminal-control', 'control-agent', 1, { providerID: 'provider', id: 'clip\x1b]52;c;YQ==\x07' }),
+        msg('model-bidi-control', 'bidi-agent', 2, { providerID: 'provider', id: 'bidi\u202elabel' }),
+      ] }
+      break
+    case 'model notice label':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [msg('model-notice-label', 'alpha', 1, { providerID: 'provider', id: 'Summary incomplete' })] }
       break
     case 'repeated nested history':
       fixture.messages.child[0].agent = 'alpha'
@@ -196,14 +315,14 @@ export async function updateControl(world, change) {
   await writeControl(world)
 }
 
-export async function toggle(world, method) {
+export async function toggle(world, method, sectionName = 'Agent stats') {
   const text = screen(world)
   const lines = text.split('\n')
-  const y = lines.findIndex(line => line.includes('Agent stats'))
-  assert.ok(y >= 0, 'Agent stats section must be visible before toggling')
-  const x = lines[y].indexOf('Agent stats')
+  const y = lines.findIndex(line => line.includes(sectionName))
+  assert.ok(y >= 0, `${sectionName} section must be visible before toggling`)
+  const x = lines[y].indexOf(sectionName)
   const headingState = value => {
-    const heading = value.split('\n').find(line => line.includes('Agent stats')) ?? ''
+    const heading = value.split('\n').find(line => line.includes(sectionName)) ?? ''
     if (/[▾▼]/.test(heading)) return true
     if (/[▸▶]/.test(heading)) return false
     return undefined
@@ -223,8 +342,10 @@ export async function toggle(world, method) {
     // Exercise the documented host command palette using only terminal input.
     world.sidebarPty.send('\x10')
     await new Promise(resolve => setTimeout(resolve, 200))
-    world.sidebarPty.send('Agent stats')
-    await eventually(world, value => /toggle.*agent stats/i.test(value), 'the keyboard command palette does not offer an Agent stats toggle')
+    world.sidebarPty.send(sectionName)
+    const escaped = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    await eventually(world, value => new RegExp(`toggle.*${escaped}`, 'i').test(value),
+      `the keyboard command palette does not offer a ${sectionName} toggle`)
     world.sidebarPty.send('\r')
   } else throw new Error(`unknown toggle input: ${method}`)
   await waitForTransition()

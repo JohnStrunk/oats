@@ -1,13 +1,13 @@
 # Project Architecture
 
 This document covers the OATS OpenCode V2 TUI plugin and the existing repository
-infrastructure. The plugin presents an **OATS loaded** startup toast and an
-**Agent stats** session-sidebar section through the OpenCode TUI host. Session
-data access supplies individual records; usage aggregation summarizes reported
-costs and usage. Pricing attribution and a detail view explain usage by agent
-and model. The descriptions below define conceptual boundaries and
-required host surfaces, not a commitment to specific libraries or internal
-APIs. The documented supported OpenCode
+infrastructure. The plugin presents an **OATS loaded** startup toast and sibling
+**Agent stats** and **Model stats** sections in the session sidebar through the
+OpenCode TUI host. Session data access supplies individual records; usage
+aggregation summarizes reported costs and usage. Pricing attribution and a
+detail view explain usage by agent and model. The descriptions below define
+conceptual boundaries and required host surfaces, not a commitment to specific
+libraries or internal APIs. The documented supported OpenCode
 host version follows the exact `@opencode/cli` pin in
 [the host package manifest](.github/tooling/opencode-host/package.json);
 compatibility with other releases is not established. An upgrade must pass
@@ -15,26 +15,33 @@ verification before support for the newly pinned release is established.
 
 ## Main Components
 
-- **`plugin-ui`**: Presents the startup toast and a collapsible **Agent stats**
-  section in the session sidebar. It owns presentation of scoped reported-cost
-  summaries, data status, and mouse and keyboard toggling. Expansion starts
-  enabled; the user's choice is shared across sessions for the application
-  lifetime and resets on restart. Collapsing changes visibility, not data scope
-  or freshness when reopened. The UI coordinates session-data updates with
-  on-demand aggregation rather than calculating costs itself. Display formatting
-  rounds aggregated reported-cost totals toward positive infinity to the next
-  cent, leaving exact-cent amounts unchanged, without changing underlying
-  records or aggregation. This applies to negative totals too; any positive
-  total below one cent displays as one cent. It distinguishes history loading,
-  confirmed-empty history, and unavailable history, and preserves known partial
-  totals. It marks known incomplete agent-row totals with `e` and visibly
-  identifies unattributed work. If any Agent stats row carries the marker, the
-  sidebar legend reads exactly `e = estimated`; otherwise, it is omitted.
-  Unknown totals remain distinct from zero. Summary-level data gaps without a
-  row-level marker have no separate sidebar incompleteness indicator. The
-  sidebar displays no standalone `Summary incomplete` notice. The details modal
-  presents usage by agent/model, current rates, estimated category costs,
-  reported costs, and uncertainty.
+- **`plugin-ui`**: Presents the startup toast and sibling, independently
+  collapsible **Agent stats** and **Model stats** sections in the session
+  sidebar. It owns presentation of scoped reported-cost summaries, data status,
+  and mouse and keyboard toggling. Both sections start expanded; each section's
+  choice is independent, shared across sessions for the application lifetime,
+  and reset on restart. Collapsing one section changes only its visibility, not
+  data scope or freshness when reopened. The UI coordinates session-data updates
+  with on-demand aggregation rather than calculating costs itself. Display
+  formatting for both summaries rounds aggregated reported-cost totals toward
+  positive infinity to the next cent, leaving exact-cent amounts unchanged,
+  without changing underlying records or aggregation. This applies to negative
+  totals too; any positive total below one cent displays as one cent. It
+  distinguishes history loading, confirmed-empty history, and unavailable
+  history, and preserves known partial totals. It marks known incomplete row
+  totals in each section with `e`; each section shows its own exact
+  `e = estimated` legend once if any of its rows carries the marker, and omits
+  the legend otherwise. Unknown totals remain distinct from zero. Summary-level
+  data gaps without a row-level marker have no separate sidebar incompleteness
+  indicator, and neither section displays a standalone `Summary incomplete`
+  notice. Unattributed work remains visible. Model stats groups reported costs
+  by recorded model identifier across providers and agents, not by the currently
+  selected model; rows without a usable identifier remain **Unattributed**. It
+  displays reported costs rather than provider-price estimates. Model labels
+  align left and cost values right; labels stay full when they fit and shorten
+  only when width or a collision requires it. The details modal presents usage
+  by agent/model, current rates, estimated category costs, reported costs, and
+  uncertainty.
 - **`session-data-access`**: Supplies available historical and live individual
   usage records for the displayed session and its descendants, retaining recorded
   agent and model identities and OpenCode-reported costs. It exposes missing
@@ -46,17 +53,18 @@ verification before support for the newly pinned release is established.
   the dataset's scope; no displayed session means an empty dataset. OpenCode
   remains the source of execution data. This component does not aggregate
   records or present statistics.
-- **`usage-aggregation`**: Internally summarizes individual OpenCode-reported costs
-  on demand from each latest scoped session-data snapshot, by recorded agent
-  name for the displayed session and its descendants. It does not subscribe to
-  updates or maintain reactive summaries. Repeated
-  invocations and work across models share a summary under the same name;
-  delegated work remains attributed to the executing agent without counting
-  tree totals again. Summaries distinguish known totals from incomplete data
-  and preserve work with unknown identity as unattributed. This capability does
-  not present a UI, derive pricing estimates, or establish billing accuracy.
-  It also summarizes usage by recorded agent and provider/model for the details
-  view, preserving missing identities, usage, and reported-cost uncertainty.
+- **`usage-aggregation`**: Internally summarizes individual OpenCode-reported
+  costs on demand from the latest scoped session data. For Agent stats, it groups
+  by recorded agent name; repeated invocations and work across models share a
+  group, while delegated work remains attributed to the executing agent without
+  counting tree totals again. For Model stats, it groups by recorded model
+  identifier, combining records across providers and agents. A currently
+  selected model does not replace the recorded identity, and a missing or
+  unusable model identifier remains unattributed. Both summaries distinguish
+  known totals from incomplete data. This capability does not present a UI,
+  derive pricing estimates, or establish billing accuracy. It also summarizes
+  usage by recorded agent and provider/model for the details view, preserving
+  missing identities, usage, and reported-cost uncertainty.
 - **`pricing-attribution`**: Associates usage with current model and provider
   pricing, expressed as rates per million tokens. It relates
   per-dimension cost estimates to OpenCode-reported costs while
@@ -94,24 +102,36 @@ the details view uses the same session scope and current model pricing:
    Live usage settles at step boundaries, rather than arriving as a billing
    count for each streamed token. Updates replace individual records without
    duplicating them.
-2. On demand, usage aggregation takes the latest scoped snapshot and sums each
-   individual reported cost once by recorded agent
-   name, retaining known totals and indications of incomplete or unattributed
-   work. A subsequent invocation reflects additions and updates in its supplied
-   snapshot without retaining contributions from earlier snapshots. The supplied
-   scope isolates the displayed session subtree from unrelated or previously
-   displayed sessions. No displayed session means no agent summaries. The
-   aggregation component itself has no reactive subscription or UI ownership.
+2. On demand, usage aggregation takes the latest scoped snapshot and groups
+   individual reported costs by recorded agent name for Agent stats and by
+   recorded model identifier for Model stats. A model group combines the same
+   identifier across providers and agents. Each grouping retains known totals
+   and indicates incomplete or unattributed work; missing or unusable identity
+   remains unattributed rather than being assigned to another group. A
+   subsequent invocation reflects additions and updates in its supplied snapshot
+   without retaining contributions from earlier snapshots. The supplied scope
+   isolates the displayed session subtree from unrelated or previously displayed
+   sessions. No displayed session means no sidebar summaries. The aggregation
+   component itself has no reactive subscription or UI ownership.
 3. The plugin UI requests summaries for available history when a session opens
-   and as scoped data changes, presenting one row per recorded agent name,
-   including nested delegated work and combining repeated invocations. Settled
-   usage updates the displayed costs; session switching changes the displayed
-   scope without retaining the previous session's totals. Reopening a collapsed
-   section presents current data. History loading, confirmed-empty history, and
-   unavailable history remain distinct. Missing or ambiguous totals remain
-   unknown rather than becoming zero. Incomplete agent-row totals use the `e`
-   marker and conditional legend described above. Summary-level data gaps
-   without a row-level marker have no separate sidebar incompleteness indicator.
+   and as scoped data changes. It presents one row per recorded agent name in
+   Agent stats and one per usable recorded model identifier in Model stats,
+   including nested delegated work and combining repeated invocations. Model
+   stats uses recorded identity, not the currently selected model, and displays
+   reported costs rather than provider-price estimates. Model labels align left
+   and cost values right; labels stay full when they fit and shorten only when
+   width or a collision requires it. Settled usage updates the displayed costs;
+   session switching changes both summaries' scope without retaining the
+   previous session's totals. Reopening a collapsed section presents current
+   data. Both sections start expanded and toggle independently, with separate
+   expansion choices retained across sessions for the application lifetime and
+   reset on restart. History loading, confirmed-empty history, and unavailable
+   history remain distinct. Missing or ambiguous totals remain unknown rather
+   than becoming zero. Incomplete row totals use the `e` marker; each section
+   shows its own `e = estimated` legend exactly once if it has a marked row and
+   omits it otherwise. Summary-level data gaps without a row-level marker have
+   no separate sidebar incompleteness indicator, and neither section displays a
+   standalone `Summary incomplete` notice.
 4. Pricing attribution combines usage with available current rates to form an
    estimated breakdown, distinct from recorded costs.
 5. The details view presents these breakdowns, including gaps and uncertainty,
@@ -120,8 +140,11 @@ the details view uses the same session scope and current model pricing:
 ## Limitations and Open Definitions
 
 - Agent configuration or a currently selected model is not proof of the model
-  used for earlier work. Attribution depends on recorded execution identities,
-  and a session may contain work from multiple models.
+  used for earlier work. Model stats groups by the recorded model identifier,
+  combining the same identifier across providers and agents rather than using
+  current selection or catalogue metadata. In contrast, the details view keeps
+  provider/model identities distinct. Attribution depends on recorded execution
+  identities, and a session may contain work from multiple models.
 - OpenCode v2.0.32 typically does not persist historical events. This observation
   is version-specific, not established for later releases. Some event-only
   usage and retry attempts may therefore be unreconstructible after the event
@@ -146,12 +169,12 @@ the details view uses the same session scope and current model pricing:
   a billing ledger. Displayed sidebar totals are rounded informational reported
   costs, not billing-exact values, derived estimates, or billing guarantees;
   current-price estimates may differ from provider invoices.
-- Reported-cost aggregation retains the known portion of an agent's total and
-  identifies incompleteness when cost is missing or ambiguous. No known cost is
-  not a known zero. Unknown agent identity remains unattributed rather than
-  assigning work to another agent or discarding its known cost. Data-access
-  gaps also limit the completeness of the overall summary; aggregation cannot
-  reconstruct missing history.
+- Reported-cost aggregation retains the known portion of each agent or model
+  group's total and identifies incompleteness when cost is missing or ambiguous.
+  No known cost is not a known zero. Unknown agent or model identity remains
+  visible as **Unattributed** in its summary rather than being assigned to
+  another group or discarding known cost. Data-access gaps also limit summary
+  completeness; aggregation cannot reconstruct missing history.
 - The definition of **base cost**, its relationship to total cost, and when a
   comparison is meaningful remain unresolved. This architecture assigns no
   formula or accounting scope to that term.
@@ -159,8 +182,9 @@ the details view uses the same session scope and current model pricing:
   [features/usage-aggregation/](features/usage-aggregation/). Behavioral
   specifications in [features/](features/) define sidebar acceptance criteria
   and interactions; this document defines conceptual boundaries rather than
-  implementation details. Token aggregation, model-price-derived estimates,
-  and detail-view behavior are specified separately from the sidebar milestone.
+  implementation details. Token-category aggregation, current-price-derived
+  estimates, and detail-view behavior remain separate from the two reported-cost
+  sidebar summaries.
 - These boundaries and the authoritative behavioral specifications must remain
   sufficient to regenerate the sidebar without relying on existing derived
   implementation code. Specific UI libraries, internal APIs, and test helpers

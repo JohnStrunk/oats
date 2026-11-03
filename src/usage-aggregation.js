@@ -14,14 +14,18 @@ export function aggregateReportedCosts(snapshot) {
 }
 
 // Display consumers receive the same summary as aggregateReportedCosts, plus
-// roundedCost on each agent and on the unattributed bucket. roundedCost sums
-// the reported numbers' shortest decimal representations exactly and rounds
+// roundedCost on each identity group and on the unattributed bucket. roundedCost
+// sums the reported numbers' shortest decimal representations exactly and rounds
 // the total once toward positive infinity to cents. knownCost and every other
 // field retain the aggregation's numeric behavior, including overflow. When
 // the exact total exceeds the display bound, roundedCost is null and
 // overflowDirection identifies which bound was exceeded.
 export function aggregateReportedCostsForDisplay(snapshot) {
   return aggregateSnapshot(snapshot, true)
+}
+
+export function aggregateReportedCostsByModelForDisplay(snapshot) {
+  return aggregateSnapshotByModel(snapshot, true)
 }
 
 // The sidebar reserves room for six cent digits. A larger exact total cannot
@@ -37,18 +41,34 @@ export function formatReportedCost(cost) {
 }
 
 function aggregateSnapshot(snapshot, includeRounded) {
+  return aggregateByIdentity(snapshot, includeRounded, {
+    field: 'agent',
+    collection: 'agents',
+    getIdentity: (record) => record?.agent,
+  })
+}
+
+function aggregateSnapshotByModel(snapshot, includeRounded) {
+  return aggregateByIdentity(snapshot, includeRounded, {
+    field: 'model',
+    collection: 'models',
+    getIdentity: (record) => record?.model?.id,
+  })
+}
+
+function aggregateByIdentity(snapshot, includeRounded, grouping) {
   const groups = new Map()
   let unattributed = null
 
   const makeGroup = () => ({ costs: [], incomplete: false })
   for (const record of snapshot?.records ?? []) {
-    const agent = record?.agent
+    const identity = grouping.getIdentity(record)
     let group
-    if (typeof agent === 'string' && agent.trim().length > 0) {
-      group = groups.get(agent)
+    if (typeof identity === 'string' && identity.trim().length > 0) {
+      group = groups.get(identity)
       if (!group) {
         group = makeGroup()
-        groups.set(agent, group)
+        groups.set(identity, group)
       }
     } else {
       unattributed ??= makeGroup()
@@ -88,20 +108,20 @@ function aggregateSnapshot(snapshot, includeRounded) {
     )
   }
 
-  const agents = Array.from(groups, ([agent, group]) => ({
-    agent,
+  const entries = Array.from(groups, ([identity, group]) => ({
+    [grouping.field]: identity,
     ...summarize(group),
   }))
   const unattributedSummary = unattributed ? summarize(unattributed) : null
   return {
     sessionID: snapshot?.sessionID ?? null,
-    agents,
+    [grouping.collection]: entries,
     unattributed: unattributedSummary,
     incomplete:
       snapshot?.complete !== true ||
       (snapshot?.gaps?.length ?? 0) > 0 ||
       (snapshot?.errors?.length ?? 0) > 0 ||
-      agents.some((entry) => entry.incomplete) ||
+      entries.some((entry) => entry.incomplete) ||
       unattributedSummary !== null,
   }
 }

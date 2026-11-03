@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { requireRealHost } from './prerequisites.js'
 import { startSidebarServer } from './authenticated_server.js'
-import { costRow, legendLines } from './sidebar_row_geometry.js'
+import { costRow, hasSectionHeading, legendLines } from './sidebar_row_geometry.js'
 import { clickAt } from './terminal_screen.js'
 import { startSidebarTui } from './tui_sidebar_harness.js'
 
@@ -27,12 +27,20 @@ import { startSidebarTui } from './tui_sidebar_harness.js'
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const MAX_TEST_MS = 180_000
-const ALPHA_ROW = /\balpha\b[^\n]*\$3\.00/
-const BETA_ROW = /\bbeta\b[^\n]*\$2\.00/
-const ANY_AGENT_ROW = /\balpha\b[^\n]*\$3\.00|\bbeta\b[^\n]*\$2\.00|\bgamma\b[^\n]*unavailable|\bzero\b[^\n]*\$0\.00|Unattributed[^\n]*\$1\.00/
-const EXPANDED_HEADING = /▼ Agent stats/
-const COLLAPSED_HEADING = /▶ Agent stats/
-const OLD_HEADING_GLYPH = /[▸▾] Agent stats/
+// Expected model IDs and totals from authenticated_server.js: alpha's $1 + $2
+// calls, beta's settled $2 plus an unsettled call, gamma's missing cost, zero's
+// reported $0, and the known $1 plus unsettled unattributed compaction usage.
+const MODEL_ROWS = [
+  { label: 'alpha-model', value: '$3.00', marker: '' },
+  { label: 'beta-model', value: '$2.00', marker: 'e' },
+  { label: 'gamma-model', value: 'unavailable', marker: '' },
+  { label: 'zero-model', value: '$0.00', marker: '' },
+  { label: 'Unattributed', value: '$1.00', marker: 'e' },
+]
+const EXPANDED_AGENT_HEADING = /▼ Agent stats/
+const COLLAPSED_AGENT_HEADING = /▶ Agent stats/
+const OLD_AGENT_HEADING_GLYPH = /[▸▾] Agent stats/
+const EXPANDED_MODEL_HEADING = /▼ Model stats/
 const LEGEND = 'e = estimated'
 
 async function openCommandPalette(tui) {
@@ -53,17 +61,79 @@ async function toggleAgentStatsFromPalette(tui) {
   tui.send('\r')
 }
 
-const rowsRendered = (screen, rows) =>
-  screen.includes('Agent stats') && rows.every(row => costRow(screen, row.label))
+async function assertCommandUnavailable(tui, query, commandPattern) {
+  await openCommandPalette(tui)
+  tui.send(query)
+  await tui.waitFor(
+    screen => /No results found/.test(screen),
+    `the command palette to report no ${query} command without the plugin`,
+  )
+  assert.doesNotMatch(
+    tui.screen(),
+    commandPattern,
+    `the ${query} plugin command must not be discoverable when the plugin is absent`,
+  )
+
+  tui.send('\x1b')
+  await tui.waitFor(
+    screen => !/Commands/.test(screen),
+    'the command palette to close',
+  )
+}
+
+const rowsRendered = (screen, rows, section = 'Agent stats') =>
+  hasSectionHeading(screen, section) &&
+  rows.every(row => costRow(screen, row.label, section))
+
+const anyRowsRendered = (screen, rows, section = 'Agent stats') =>
+  rows.some(row => costRow(screen, row.label, section))
+
+function agentCollapsedWithModelVisible(screen, agentRows) {
+  if (!hasSectionHeading(screen, 'Agent stats')) return false
+  if (anyRowsRendered(screen, agentRows, 'Agent stats')) return false
+  if (!hasSectionHeading(screen, 'Model stats')) return false
+  if (!rowsRendered(screen, MODEL_ROWS, 'Model stats')) return false
+  return screen
+}
+
+function assertAgentCollapsedWithModelVisible(screen, agentRows) {
+  assert.match(
+    screen,
+    COLLAPSED_AGENT_HEADING,
+    'the collapsed Agent stats section must use the host disclosure indicator',
+  )
+  assert.doesNotMatch(screen, EXPANDED_AGENT_HEADING, 'Agent stats must be collapsed')
+  assert.equal(
+    anyRowsRendered(screen, agentRows, 'Agent stats'),
+    false,
+    'Agent stats rows must not remain visible after collapse',
+  )
+  assertCostRows(screen, MODEL_ROWS, 'Model stats')
+  assert.match(
+    screen,
+    EXPANDED_MODEL_HEADING,
+    'collapsing Agent stats must leave Model stats expanded',
+  )
+  assert.equal(
+    legendLines(screen, 'Agent stats').length,
+    0,
+    `the "${LEGEND}" legend must not remain visible in collapsed Agent stats`,
+  )
+  assert.equal(
+    legendLines(screen, 'Model stats').length,
+    1,
+    `the "${LEGEND}" legend must remain visible in expanded Model stats`,
+  )
+}
 
 // The AC only requires a shared column, not a specific width, and the host
 // trims trailing blanks, so alignment is asserted through the rendered
 // columns: equal label starts, equal value ends, and one shared marker column
 // immediately after each value.
-function assertCostRows(screen, rows) {
+function assertCostRows(screen, rows, section = 'Agent stats') {
   const rendered = rows.map(row => {
-    const parsed = costRow(screen, row.label)
-    assert.ok(parsed, `the sidebar must render a cost row for "${row.label}"\n${screen}`)
+    const parsed = costRow(screen, row.label, section)
+    assert.ok(parsed, `the ${section} sidebar must render a cost row for "${row.label}"\n${screen}`)
     return parsed
   })
 
@@ -82,7 +152,7 @@ function assertCostRows(screen, rows) {
   assert.equal(
     labelColumns.length,
     1,
-    `agent labels must be left-aligned in one column: ${JSON.stringify(rendered.map(row => [row.label, row.labelColumn]))}`,
+    `${section} labels must be left-aligned in one column: ${JSON.stringify(rendered.map(row => [row.label, row.labelColumn]))}`,
   )
 
   const valueEndColumns = [...new Set(rendered.map(row => row.valueEndColumn))]
@@ -144,15 +214,15 @@ test(
       pluginPath: REPO_ROOT,
     })
 
-    await t.test('the actual plugin renders the imported session and agent costs expanded', async () => {
+    await t.test('the actual plugin renders both imported-session summary sections expanded', async () => {
       const rendered = await tui.waitFor(
         screen => {
           if (!screen.includes(title)) return false
-          if (!ALPHA_ROW.test(screen)) return false
-          if (!BETA_ROW.test(screen)) return false
-          return rowsRendered(screen, server.sessions.rows) && screen
+          if (!rowsRendered(screen, server.sessions.rows)) return false
+          if (!rowsRendered(screen, MODEL_ROWS, 'Model stats')) return false
+          return screen
         },
-        `"${title}" with Agent stats rows for ${server.sessions.rows.map(row => row.label).join(', ')}`,
+        `"${title}" with Agent stats rows and Model stats rows for ${MODEL_ROWS.map(row => row.label).join(', ')}`,
       )
       assert.match(
         rendered,
@@ -161,43 +231,49 @@ test(
       )
       assert.match(
         rendered,
-        EXPANDED_HEADING,
+        EXPANDED_AGENT_HEADING,
         'the expanded section must use the host disclosure indicator immediately before its label',
+      )
+      assert.match(
+        rendered,
+        EXPANDED_MODEL_HEADING,
+        'the Model stats section must be expanded beside Agent stats',
       )
       assert.doesNotMatch(
         rendered,
-        OLD_HEADING_GLYPH,
-        'the section must not use the previous small-triangle indicators',
+        OLD_AGENT_HEADING_GLYPH,
+        'the Agent stats section must not use the previous small-triangle indicators',
       )
       assert.doesNotMatch(
         rendered,
         /^\s*Summary incomplete\s*$/m,
         'the section must not add a standalone summary-incomplete notice',
       )
-      assert.match(
-        rendered,
-        ALPHA_ROW,
-        'repeated alpha work must be combined in the rendered row',
-      )
-      assert.match(
-        rendered,
-        BETA_ROW,
-        'the nested child session agent must be rendered in the subtree',
-      )
+      assertCostRows(rendered, server.sessions.rows)
     })
 
     await t.test('rendered cost rows keep labels left and values right with a marker column', async () => {
       const rendered = await tui.waitFor(
-        screen => rowsRendered(screen, server.sessions.rows) && screen,
-        'the complete set of rendered agent cost rows',
+        screen =>
+          rowsRendered(screen, server.sessions.rows) &&
+          rowsRendered(screen, MODEL_ROWS, 'Model stats') &&
+          screen,
+        'the complete set of rendered Agent stats and Model stats cost rows',
       )
       assertCostRows(rendered, server.sessions.rows)
+      assertCostRows(rendered, MODEL_ROWS, 'Model stats')
 
-      const legends = legendLines(rendered)
+      const agentLegends = legendLines(rendered, 'Agent stats')
       assert.equal(
-        legends.length,
+        agentLegends.length,
         1,
-        `the "${LEGEND}" legend must appear exactly once while a row carries the e marker\n${rendered}`,
+        `the "${LEGEND}" legend must appear exactly once in Agent stats while a row carries the e marker\n${rendered}`,
+      )
+      const modelLegends = legendLines(rendered, 'Model stats')
+      assert.equal(
+        modelLegends.length,
+        1,
+        `the "${LEGEND}" legend must appear exactly once in Model stats while a row carries the e marker\n${rendered}`,
       )
     })
 
@@ -208,35 +284,20 @@ test(
       assert.ok(cell.row > 0 && cell.column > 0, 'the click target must be on the rendered screen')
 
       const collapsed = await tui.waitFor(
-        screen => {
-          if (!screen.includes('Agent stats')) return false
-          if (ANY_AGENT_ROW.test(screen)) return false
-          return screen
-        },
-        'the Agent stats rows to disappear after clicking the header',
+        screen => agentCollapsedWithModelVisible(screen, server.sessions.rows),
+        'Agent stats rows to disappear while Model stats remains visible after clicking the header',
       )
-      assert.match(
-        collapsed,
-        COLLAPSED_HEADING,
-        'the collapsed section must use the host disclosure indicator immediately before its label',
-      )
-      assert.doesNotMatch(
-        collapsed,
-        ANY_AGENT_ROW,
-        'collapsed content must not remain visible',
-      )
-      assert.equal(
-        legendLines(collapsed).length,
-        0,
-        `the "${LEGEND}" legend must not remain visible while collapsed`,
-      )
+      assertAgentCollapsedWithModelVisible(collapsed, server.sessions.rows)
 
       tui.click('Agent stats', 2)
       const expanded = await tui.waitFor(
-        screen => rowsRendered(screen, server.sessions.rows) && screen,
+        screen =>
+          rowsRendered(screen, server.sessions.rows) &&
+          rowsRendered(screen, MODEL_ROWS, 'Model stats') &&
+          screen,
         'the Agent stats rows to return after clicking the header again',
       )
-      assert.match(expanded, EXPANDED_HEADING)
+      assert.match(expanded, EXPANDED_AGENT_HEADING)
       assertCostRows(expanded, server.sessions.rows)
     })
 
@@ -248,24 +309,24 @@ test(
       // modifier encoding for Ctrl+Shift+A.
       await toggleAgentStatsFromPalette(tui)
       const collapsed = await tui.waitFor(
-        screen =>
-          screen.includes('Agent stats') &&
-          !ANY_AGENT_ROW.test(screen) &&
-          screen,
-        'the Agent stats rows to disappear after the keyboard toggle',
+        screen => agentCollapsedWithModelVisible(screen, server.sessions.rows),
+        'Agent stats rows to disappear while Model stats remains visible after the keyboard toggle',
       )
-      assert.match(collapsed, COLLAPSED_HEADING)
+      assertAgentCollapsedWithModelVisible(collapsed, server.sessions.rows)
 
       await toggleAgentStatsFromPalette(tui)
       const expanded = await tui.waitFor(
-        screen => rowsRendered(screen, server.sessions.rows) && screen,
+        screen =>
+          rowsRendered(screen, server.sessions.rows) &&
+          rowsRendered(screen, MODEL_ROWS, 'Model stats') &&
+          screen,
         'the Agent stats rows to return after the keyboard toggle again',
       )
-      assert.match(expanded, EXPANDED_HEADING)
+      assert.match(expanded, EXPANDED_AGENT_HEADING)
       assertCostRows(expanded, server.sessions.rows)
     })
 
-    await t.test('the same TUI without the plugin has no Agent stats sidebar', async () => {
+    await t.test('the same TUI without the plugin has neither stats section or command', async () => {
       control = await startSidebarTui({
         executable: host.executable,
         server,
@@ -276,36 +337,31 @@ test(
         `the session screen "${title}" without the OATS plugin`,
       )
 
-      // The same command-palette query must not discover a plugin command.
-      await openCommandPalette(control)
-      control.send('Agent stats')
-      await control.waitFor(
-        screen => /No results found/.test(screen),
-        'the command palette to report no Agent stats command without the plugin',
-      )
-      assert.doesNotMatch(
-        control.screen(),
-        /Toggle Agent stats/i,
-        'the plugin command must not be discoverable when the plugin is absent',
-      )
+      await assertCommandUnavailable(control, 'Agent stats', /Toggle Agent stats/i)
+      await assertCommandUnavailable(control, 'Model stats', /Toggle Model stats/i)
 
-      control.send('\x1b')
       await control.waitFor(
         screen => screen.includes(title) && !/Commands/.test(screen),
-        'the command palette to close',
+        'the command palette to close and the session screen to return',
       )
       if (agentStatsCell) {
         // Exercise the pointer path at the coordinates the real plugin header
         // occupied in the positive run. Without the plugin it must not reveal
-        // an Agent stats section.
+        // either plugin stats section.
         control.send(clickAt(agentStatsCell))
       }
       await control.assertAbsentFor('Agent stats', 4_000)
+      await control.assertAbsentFor('Model stats', 4_000)
       const screen = control.screen()
-      assert.doesNotMatch(
-        screen,
-        ANY_AGENT_ROW,
-        'plugin-specific agent rows must not appear when the plugin is absent',
+      assert.equal(
+        hasSectionHeading(screen, 'Agent stats'),
+        false,
+        'the Agent stats section must not appear when the plugin is absent',
+      )
+      assert.equal(
+        hasSectionHeading(screen, 'Model stats'),
+        false,
+        'the Model stats section must not appear when the plugin is absent',
       )
       assert.match(
         screen,
