@@ -4,7 +4,7 @@ import {
   agentIncomplete, amountFor, collapsedWithoutContent, displayedValue, historyState, rowsFor,
   rowsRemain, sidebarAgentRows, sidebarRowsMatch, sidebarSectionLines, summaryNoticeAbsent,
 } from '../steps/sidebar_section_helper.js'
-import { inspectAgentNameCollisions, inspectAgentNameSizing } from '../steps/sidebar_alignment_helper.js'
+import { inspectAgentNameCollisions, inspectAgentNameSizing, legendCount } from '../steps/sidebar_alignment_helper.js'
 
 test('agent rows are restricted to the section, not unrelated sidebar footer text', () => {
   const screen = [
@@ -23,6 +23,27 @@ test('agent rows are restricted to the section, not unrelated sidebar footer tex
   assert.equal(rowsFor(screen, 'alpha').length, 1)
   assert.equal(amountFor(rowsFor(screen, 'alpha')[0]), 1)
   assert.deepEqual(rowsFor(screen, 'other'), [])
+})
+
+test('Agent stats rows and legend checks stop at the sibling Model stats heading', () => {
+  const text = [
+    '                 ▼ Agent stats',
+    '                 alpha: $1.00e',
+    '                 e = estimated',
+    '                 ▼ Model stats',
+    '                 alpha-model: $2.00e',
+    '                 e = estimated',
+  ].join('\n')
+
+  assert.deepEqual(sidebarSectionLines(text).map(line => line.trim()), [
+    'alpha: $1.00e', 'e = estimated',
+  ])
+  assert.deepEqual(sidebarAgentRows(text).map(({ name, value }) => ({ name, value })), [
+    { name: 'alpha', value: '$1.00' },
+  ])
+  assert.equal(legendCount(text), 1)
+  assert.equal(agentIncomplete(text, 'alpha'), true)
+  assert.equal(sidebarRowsMatch(text, new Map([['alpha', 1]])), true)
 })
 
 test('an absent or collapsed section cannot match other screen text', () => {

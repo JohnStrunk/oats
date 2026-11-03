@@ -5,25 +5,35 @@ users who want to understand token usage and cost across a session and its
 subagents while work is happening. Its goal is to make delegated work visible
 without leaving the terminal or piecing together separate session records.
 
-The reporting experience includes a collapsible **Agent stats** section in
-the session sidebar, alongside the **OATS loaded** startup toast. It shows known
-OpenCode-reported costs by recorded agent name across the displayed session and
-nested delegated work, combining repeated invocations. Known incomplete
-agent-row totals remain visible with an `e` marker. If at least one Agent stats
-row has the marker, the sidebar legend reads exactly `e = estimated`; if none
-do, the legend is omitted.
-Summary-level gaps without a row-level marker have no separate sidebar
-incompleteness indicator; the sidebar displays no standalone
-`Summary incomplete` notice.
-Unattributed work remains visible. History loading, confirmed-empty history,
-and unavailable history are distinct, and unknown totals remain distinct from
-zero.
+The reporting experience includes sibling, independently collapsible
+**Agent stats** and **Model stats** sections in the session sidebar, alongside
+the **OATS loaded** startup toast. Agent stats shows known OpenCode-reported
+costs by recorded agent name across the displayed session and nested delegated
+work, combining repeated invocations. Model stats groups reported costs by the
+recorded model identifier (model ID/name), combining matching identifiers
+across providers and agents. It uses the identity on each usage record, not the
+currently selected model or model-catalogue metadata. Work without a usable
+recorded model identity remains visible as **Unattributed**; Model stats shows
+reported costs only and does not derive provider-price estimates.
 
-The section starts expanded and supports mouse and keyboard toggling. The
-user's expansion choice is shared across sessions for the application lifetime,
-not persisted across restarts. Available history appears when a session opens,
-and settled usage and session changes keep the display current, including when
-the section is reopened after being collapsed.
+Known incomplete row totals remain visible with an `e` marker. Each section has
+its own `e = estimated` legend, shown exactly once if that section has a row
+with the marker and omitted otherwise. Summary-level gaps without a row-level
+marker have no separate sidebar incompleteness indicator; neither section
+displays a standalone `Summary incomplete` notice. Unattributed work remains
+visible. History loading, confirmed-empty history, and unavailable history are
+distinct, and unknown totals remain distinct from zero.
+
+Both sections start expanded, support mouse and keyboard toggling, and can be
+collapsed independently. The application retains each section's expansion
+choice across session changes for its lifetime, not across restarts. Both
+summaries follow the displayed session and its descendants. Available history
+appears when a session opens; session and settled-usage updates keep both
+summaries current, including after either is reopened from a collapsed state.
+
+Model stats gives each recorded model identifier a row, keeps the full label
+when it fits, and shortens it only when width or a collision requires it. Row
+labels align left and reported-cost values align right.
 
 The sidebar's **(details)** link opens a scrollable usage-details modal for the
 same session and nested delegated work. It groups repeated usage by recorded
@@ -43,9 +53,10 @@ ambiguous pricing, including unsupported tiered pricing, remains unknown rather
 than implying free usage. Base-versus-total cost comparisons remain a future
 aim where meaningful; the meaning of base cost remains to be defined.
 
-The initial sidebar sums reported costs; it does not derive cost estimates.
+Both sidebar summaries sum reported costs; neither derives price estimates.
 These values are informational, not billing guarantees. OATS aims for useful,
-transparent reporting and estimates, not billing-accurate accounting.
+transparent cost reporting and, in the details view, estimates—not
+billing-accurate accounting.
 Live visibility follows OpenCode's per-step usage settlement rather than a
 per-token meter. Provider reporting, cache and reasoning accounting, and
 missing or zero pricing can limit what is known; those limits are part of the

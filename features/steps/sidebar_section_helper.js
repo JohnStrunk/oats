@@ -1,5 +1,6 @@
-// Only examine the rendered section body. The first blank sidebar line closes
-// this section; other host sections or footer text must not count as its rows.
+// Only examine the rendered section body. A blank line or sibling Model stats
+// heading closes Agent stats; other host sections or footer text must not count
+// as its rows.
 export function sidebarSectionLines(text) {
   const lines = text.split('\n')
   const headingIndex = lines.findIndex(line => line.includes('Agent stats'))
@@ -7,6 +8,7 @@ export function sidebarSectionLines(text) {
   const start = Math.max(0, lines[headingIndex].indexOf('Agent stats') - 3)
   const result = []
   for (const line of lines.slice(headingIndex + 1)) {
+    if (/^[\s│┃]*[▾▸▼▶]\s+Model stats\b/.test(line)) break
     const content = line.slice(start)
     if (!content.trim()) break
     result.push(content)

@@ -8,8 +8,9 @@ import {
 } from './sidebar-test-host.js'
 import {
   costRows,
-  legendCount,
+  legendCountInSummarySection,
   rowFor,
+  rowsInSummarySection,
   rowsShareValueEnd,
 } from './agent-stats-display-oracle.js'
 
@@ -77,6 +78,11 @@ const frame = (app) => app.captureCharFrame()
 const frameLines = (text) => text.split('\n').map((line) => line.trimStart())
 const frameRows = (text) => costRows(frameLines(text))
 const frameRow = (text, label) => rowFor(frameLines(text), label)
+const frameSummaryRows = (text, section) => rowsInSummarySection(frameLines(text), section)
+const frameSummaryRowForValue = (text, section, value) =>
+  frameSummaryRows(text, section).find((row) => row.value === value) ?? null
+const frameSummaryLegendCount = (text, section) =>
+  legendCountInSummarySection(frameLines(text), section)
 const command = (host) =>
   host.layers
     .flatMap((layer) => layer.commands ?? [])
@@ -229,8 +235,134 @@ test('keeps known partial and unattributed costs visible as incomplete', options
   assert.equal(frameRow(rendered, 'Unattributed').value, '$3.00')
   assert.equal(frameRow(rendered, 'Unattributed').marker, 'blank')
   assert.ok(!rendered.includes('unknown: $0.00'))
-  assert.equal(legendCount(frameLines(rendered)), 1, 'one e marker yields one legend')
+  assert.deepEqual(
+    frameSummaryRows(rendered, 'Model').map(({ label, value, marker }) => ({ label, value, marker })),
+    [{ label: 'model', value: '$5.00', marker: 'e' }],
+    'Model stats contains its own incomplete total',
+  )
+  assert.equal(frameSummaryLegendCount(rendered, 'Agent'), 1, 'Agent stats has one e legend')
+  assert.equal(frameSummaryLegendCount(rendered, 'Model'), 1, 'Model stats has one e legend')
   assert.doesNotMatch(rendered, /^\s*Summary incomplete\s*$/m)
+})
+
+test('the frame oracle counts missing and duplicate legends only within their own summary', () => {
+  const render = (agentLegends, modelLegends) => [
+    '▼ Agent stats',
+    'alpha: $1.00e',
+    ...agentLegends,
+    '▼ Model stats',
+    'model-a: $2.00e',
+    ...modelLegends,
+  ]
+
+  const modelOnly = render([], ['e = estimated'])
+  assert.equal(
+    legendCountInSummarySection(modelOnly, 'Agent'),
+    0,
+    'a Model stats legend cannot satisfy the Agent stats assertion',
+  )
+  assert.equal(legendCountInSummarySection(modelOnly, 'Model'), 1)
+
+  const agentOnly = render(['e = estimated'], [])
+  assert.equal(legendCountInSummarySection(agentOnly, 'Agent'), 1)
+  assert.equal(
+    legendCountInSummarySection(agentOnly, 'Model'),
+    0,
+    'an Agent stats legend cannot satisfy the Model stats assertion',
+  )
+
+  const duplicateAgent = render(['e = estimated', 'e = estimated'], ['e = estimated'])
+  const duplicateModel = render(['e = estimated'], ['e = estimated', 'e = estimated'])
+  assert.equal(
+    legendCountInSummarySection(modelOnly, 'Agent'),
+    0,
+    'a missing Agent stats legend is rejected when Model stats has one',
+  )
+  assert.equal(
+    legendCountInSummarySection(duplicateAgent, 'Agent'),
+    2,
+    'duplicate Agent stats legends are rejected',
+  )
+  assert.equal(
+    legendCountInSummarySection(agentOnly, 'Model'),
+    0,
+    'a missing Model stats legend is rejected when Agent stats has one',
+  )
+  assert.equal(
+    legendCountInSummarySection(duplicateModel, 'Model'),
+    2,
+    'duplicate Model stats legends are rejected',
+  )
+
+  const footerLegend = [
+    '▼ Agent stats',
+    'alpha: $1.00e',
+    'e = estimated',
+    '▼ Model stats',
+    'model-a: $2.00e',
+    '',
+    'e = estimated',
+  ]
+  assert.equal(legendCountInSummarySection(footerLegend, 'Model'), 0,
+    'a legend outside the Model stats body does not satisfy its assertion')
+})
+
+test('a model ID named Unattributed keeps a unique label when an unattributed bucket appears', options, async (t) => {
+  const recordedModel = assistantMessage('literal-unattributed-model', {
+    agent: 'alpha',
+    cost: 1,
+    model: { providerID: 'provider', id: 'Unattributed' },
+  })
+  const withoutBucket = makeSidebarHost({ messages: { root: [recordedModel] } })
+  const withoutBucketView = await mount(t, withoutBucket)
+  const withoutBucketFrame = await withoutBucketView.app.waitForFrame((text) =>
+    frameSummaryRowForValue(text, 'Model', '$1.00') !== null,
+  )
+
+  const withBucket = makeSidebarHost({
+    messages: {
+      root: [
+        recordedModel,
+        assistantMessage('unattributed-model-cost', {
+          agent: 'beta',
+          cost: 2,
+          model: null,
+        }),
+      ],
+    },
+  })
+  const withBucketView = await mount(t, withBucket)
+  const withBucketFrame = await withBucketView.app.waitForFrame((text) =>
+    frameSummaryRowForValue(text, 'Model', '$1.00') !== null &&
+    frameSummaryRowForValue(text, 'Model', '$2.00') !== null,
+  )
+
+  const rowsWithoutBucket = frameSummaryRows(withoutBucketFrame, 'Model')
+  const rowsWithBucket = frameSummaryRows(withBucketFrame, 'Model')
+  const modelWithoutBucket = frameSummaryRowForValue(withoutBucketFrame, 'Model', '$1.00')
+  const modelWithBucket = frameSummaryRowForValue(withBucketFrame, 'Model', '$1.00')
+  const unattributedBucket = frameSummaryRowForValue(withBucketFrame, 'Model', '$2.00')
+
+  assert.equal(rowsWithoutBucket.length, 1)
+  assert.equal(rowsWithBucket.length, 2)
+  assert.ok(modelWithoutBucket)
+  assert.ok(modelWithBucket)
+  assert.ok(unattributedBucket)
+  assert.deepEqual(
+    {
+      recordedModelWithoutBucket: modelWithoutBucket.label,
+      recordedModelWithBucket: modelWithBucket.label,
+      unattributedBucket: unattributedBucket.label,
+    },
+    {
+      recordedModelWithoutBucket: 'Unattributed #1',
+      recordedModelWithBucket: 'Unattributed #1',
+      unattributedBucket: 'Unattributed',
+    },
+    'the recorded model ID label is reserved consistently and remains distinct from the synthetic bucket',
+  )
+  assert.equal(new Set(rowsWithBucket.map(({ label }) => label)).size, rowsWithBucket.length,
+    'the recorded model ID and unattributed bucket have distinct labels')
 })
 
 test('updates a visible total when settled usage changes', options, async (t) => {
