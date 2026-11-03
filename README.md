@@ -454,6 +454,11 @@ Run all feature scenarios, including the host smoke tests:
 npm run test:features
 ```
 
+CI runs the complete feature suite with two Cucumber workers:
+`npm run test:features -- --parallel 2`. The local command above remains serial
+by default. Scenarios and assertions are unchanged, and each scenario uses its
+own temporary resources.
+
 Run unit tests and all feature scenarios together:
 
 ```bash
