@@ -1,8 +1,8 @@
-@ears:unwanted-behavior @component:plugin-ui @interface:opencode-tui @interface:opencode-session-data @sidebar-issue-34
+@ears:unwanted-behavior @component:plugin-ui @interface:opencode-tui @interface:opencode-session-data @sidebar-issue-34 @sidebar-issue-47
 Feature: If an Agent stats known cost total is incomplete, then the plugin UI shall mark its value with a lowercase e
 
   The e immediately follows the formatted amount or directional bound. This
-  applies to named agents and Unattributed, not merely the overall summary.
+  applies to named agents and Unattributed rows.
 
   Scenario: Known partial amounts are marked without marking complete amounts
     Given the Agent stats host fixture "aligned mixed"

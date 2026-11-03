@@ -55,5 +55,5 @@ export function costRow(screenText, label) {
 export function legendLines(screenText) {
   return screenText
     .split('\n')
-    .filter(line => line.trim() === 'e = incomplete total')
+    .filter(line => line.trim() === 'e = estimated')
 }

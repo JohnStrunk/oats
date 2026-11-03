@@ -185,7 +185,7 @@ test('identifies incomplete agent totals without turning missing cost into zero'
   assert.equal(valueFor(lines, 'partial'), '$2.00')
   assert.equal(markerFor(lines, 'partial'), 'e')
   assert.equal(legendCount(lines), 1)
-  assert.ok(lines.includes('Summary incomplete'))
+  assert.ok(!lines.includes('Summary incomplete'))
 })
 
 test('identifies an agent with no known cost as unavailable without an e marker', () => {
@@ -196,7 +196,7 @@ test('identifies an agent with no known cost as unavailable without an e marker'
   assert.equal(unknown.marker, 'blank')
   assert.ok(!unknown.line.includes('$0.00'), 'unknown cost must not be presented as zero')
   assert.equal(legendCount(lines), 0, 'unknown totals do not add an e legend')
-  assert.ok(lines.includes('Summary incomplete'))
+  assert.ok(!lines.includes('Summary incomplete'))
 })
 
 test('keeps unknown agent identity visible as unattributed work', () => {
@@ -204,7 +204,7 @@ test('keeps unknown agent identity visible as unattributed work', () => {
 
   assert.equal(valueFor(lines, 'Unattributed'), '$3.00')
   assert.ok(!lines.some((line) => line.startsWith('null:')))
-  assert.ok(lines.includes('Summary incomplete'))
+  assert.ok(!lines.includes('Summary incomplete'))
 })
 
 test('sanitizes agent names so history cannot inject terminal control sequences', () => {

@@ -54,7 +54,7 @@ test('pinned host displays bounded extreme costs and complete partial markers', 
       const lines = screen.split('\n')
       return lines.some(line => line.includes('$0.01e')) &&
         lines.some(line => line.includes('>$9999.99e')) &&
-        lines.some(line => line.trim() === 'e = incomplete total') && screen
+        lines.some(line => line.trim() === 'e = estimated') && screen
     })
     assert.match(frame, /tiny[^\n]*\$0\.01e(?=\s|$)/)
     assert.match(frame, /abc[^\n]*>\$9999\.99e(?=\s|$)/)

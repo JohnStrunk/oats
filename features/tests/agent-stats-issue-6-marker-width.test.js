@@ -27,7 +27,7 @@ test('a long named unknown total keeps its full value and blank marker', () => {
   assert.equal(row.markerSlot, ' ')
   assert.ok(row.width <= MAX_HOST_CONTENT_WIDTH, `${row.width} columns: ${row.line}`)
   assert.equal(legendCount(lines), 0, 'unknown totals do not add an e legend')
-  assert.ok(lines.includes('Summary incomplete'))
+  assert.ok(!lines.includes('Summary incomplete'))
 })
 
 test('an unattributed unknown total keeps its full value and blank marker', () => {

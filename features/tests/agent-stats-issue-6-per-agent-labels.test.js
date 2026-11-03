@@ -24,6 +24,19 @@ const suffixNumber = (label) => {
   return match ? Number.parseInt(match[1], 36) : null
 }
 
+function fittedName(name, width) {
+  if (displayWidth(name) <= width) return name
+  let prefix = ''
+  let used = 0
+  for (const character of name) {
+    const next = displayWidth(character)
+    if (used + next + displayWidth('…') > width) break
+    prefix += character
+    used += next
+  }
+  return `${prefix}…`
+}
+
 test('an unrelated expensive incomplete row does not shorten complete labels', () => {
   const lines = agentStatsLines(snapshot([
     { agent: 'research-alpha', cost: 1 },
@@ -111,15 +124,52 @@ test('a collided label never reuses a unique candidate or the reserved bucket', 
   assert.equal(legendCount(lines), 1)
 })
 
-test('collision suffixes increase globally in stable name order', () => {
+test('full names with a shared prefix remain when their individual row widths fit them', () => {
+  const entries = [
+    { agent: 'abcdefghijklmnop-alpha', cost: 1 },
+    { agent: 'abcdefghijklmnop-beta', cost: 2 },
+    { agent: 'abcdefghijklmnop-a', cost: 3 },
+    { agent: 'abcdefghijklmnop-b', cost: 100 },
+    { agent: 'research-agent-alpha', cost: 4 },
+    { agent: 'research-agent-beta', cost: 200 },
+  ]
+  const lines = agentStatsLines(snapshot(entries), 'root')
+  const rows = costRows(lines)
+
+  assert.equal(rows.length, entries.length)
+  assert.equal(new Set(rows.map((row) => row.label)).size, entries.length, rows.join('\n'))
+  for (const { agent, cost } of entries) {
+    const row = rows.find((item) => item.value === `$${cost.toFixed(2)}`)
+    assert.ok(row, `missing cost row for ${agent}`)
+    const availableNameWidth = row.valueAt - row.labelAt - 2
+    assert.ok(displayWidth(agent) <= availableNameWidth, `${agent} does not fit its ${availableNameWidth}-cell row`)
+    assert.equal(row.label, agent, `a name that fits its row must not be shortened: ${row.line}`)
+  }
+  assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
+})
+
+test('collision suffixes are reserved for names that collide after row-width fitting', () => {
   const names = [
     'abcdefghijklmnop-a', 'abcdefghijklmnop-b',
     'qrstuvwxyzabcdef-a', 'qrstuvwxyzabcdef-b',
   ]
-  const lines = agentStatsLines(snapshot(names.map((agent) => ({ agent, cost: 1 }))), 'root')
-  const numbers = costRows(lines).map((row) => suffixNumber(row.label))
+  const lines = agentStatsLines(snapshot(names.map((agent) => ({ agent, cost: null }))), 'root')
+  const rows = costRows(lines)
+  const availableWidths = rows.map((row) => row.valueAt - row.labelAt - 2)
+  const candidates = names.map((name, index) => fittedName(name, availableWidths[index]))
 
+  assert.equal(rows.length, names.length)
+  assert.ok(availableWidths.every((width) => width === availableWidths[0]))
+  assert.ok(names.every((name, index) => displayWidth(name) > availableWidths[index]))
+  assert.equal(candidates[0], candidates[1], 'the first pair must collide after fitting')
+  assert.equal(candidates[2], candidates[3], 'the second pair must collide after fitting')
+  assert.notEqual(candidates[0], candidates[2], 'the two collision groups must stay separate')
+  assert.equal(new Set(rows.map((row) => row.label)).size, names.length, rows.join('\n'))
+  const numbers = rows.map((row) => suffixNumber(row.label))
   assert.deepEqual(numbers, [1, 2, 3, 4], costRows(lines).map((row) => row.label).join('\n'))
+  assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
+  assert.ok(rows.every((row) => row.value === 'unavailable' && row.marker === 'blank'))
+  assert.equal(legendCount(lines), 0)
 })
 
 test('mixed narrow and wide budgets keep every row within the host content edge', () => {
@@ -148,7 +198,7 @@ test('mixed narrow and wide budgets keep every row within the host content edge'
   assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
   const usesMarker = rows.some((row) => row.marker === 'e')
   assert.equal(usesMarker, legendCount(lines) === 1)
-  assert.ok(lines.includes('Summary incomplete'))
+  assert.ok(!lines.includes('Summary incomplete'))
 })
 
 test('Kana Supplement U+1B000 is reserved as a wide cell in a row', () => {

@@ -53,7 +53,7 @@ test('overflow and partial totals stay distinguishable in the sidebar', () => {
   assert.ok(rowsShareValueEnd(costRows(lines)))
   assert.ok(row.width <= MAX_HOST_CONTENT_WIDTH)
   assert.ok(bucket.width <= MAX_HOST_CONTENT_WIDTH)
-  assert.ok(lines.includes('Summary incomplete'))
+  assert.ok(!lines.includes('Summary incomplete'))
 })
 
 test('zero-width marks cannot spoof a label or the unattributed bucket', () => {
@@ -95,7 +95,7 @@ test('empty history accepts only the two documented benign gap kinds', () => {
   const benign = ['historical-usage-unavailable', 'retry-history-unavailable']
   const good = agentStatsLines(snapshot([], { complete: false, gaps: benign.map(kind => ({ kind })) }), 'root')
   assert.ok(good.includes('No agent usage recorded'))
-  assert.ok(good.includes('Summary incomplete'))
+  assert.ok(!good.includes('Summary incomplete'))
   for (const gap of ['fork-provenance-uncertain', 'future-unknown-gap', 'compaction-usage-incomplete']) {
     const result = agentStatsLines(snapshot([], { complete: false, gaps: [{ kind: gap }] }), 'root')
     assert.ok(result.includes('Session history unavailable'), gap)

@@ -172,6 +172,7 @@ test('presents a blocked first read as loading rather than empty', options, asyn
   )
   assert.match(loading, /loading session history/i)
   assert.ok(!loading.includes('No agent usage recorded'))
+  assert.doesNotMatch(loading, /^\s*Summary incomplete\s*$/m)
   blocked.release()
 })
 
@@ -187,6 +188,7 @@ test('an empty read is not presented as loading or as unavailable', options, asy
   assert.match(rendered, /No agent usage recorded/)
   assert.ok(!/loading session history/i.test(rendered))
   assert.ok(!/Session history unavailable/i.test(rendered))
+  assert.doesNotMatch(rendered, /^\s*Summary incomplete\s*$/m)
 })
 
 test('identifies unavailable history without claiming confirmed empty history', options, async (t) => {
@@ -200,7 +202,7 @@ test('identifies unavailable history without claiming confirmed empty history', 
     text.includes('Session history unavailable'),
   )
   assert.match(rendered, /Session history unavailable/)
-  assert.match(rendered, /Summary incomplete/)
+  assert.doesNotMatch(rendered, /^\s*Summary incomplete\s*$/m)
   assert.ok(!rendered.includes('No agent usage recorded'))
 })
 
@@ -228,7 +230,7 @@ test('keeps known partial and unattributed costs visible as incomplete', options
   assert.equal(frameRow(rendered, 'Unattributed').marker, 'blank')
   assert.ok(!rendered.includes('unknown: $0.00'))
   assert.equal(legendCount(frameLines(rendered)), 1, 'one e marker yields one legend')
-  assert.match(rendered, /Summary incomplete/)
+  assert.doesNotMatch(rendered, /^\s*Summary incomplete\s*$/m)
 })
 
 test('updates a visible total when settled usage changes', options, async (t) => {
