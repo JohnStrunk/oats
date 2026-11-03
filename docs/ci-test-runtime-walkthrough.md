@@ -7,7 +7,7 @@
 
 ## Why
 
-Issue #50 adds an opt-in [feature-suite profiler](../scripts/profile-features.js#L81-L140) that reports timings from Cucumber messages. This walkthrough exercises the public `node scripts/profile-features.js` command; the [report formatter](../scripts/profile-report.js#L201-L243) supplies the scenario and component summary.
+Issue #50 adds an opt-in [feature-suite profiler](../scripts/profile-features.js#L81-L140) that reports timings from Cucumber messages. This walkthrough exercises the public `node scripts/profile-features.js` command; the [report formatter](../scripts/profile-report.js#L197-L240) supplies the scenario and component summary.
 
 ## Synthetic fixture and limits
 
