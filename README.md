@@ -465,6 +465,27 @@ The full suite requires both the smoke-test host prerequisites and the
 Pass Cucumber options with `npm run test:features -- ...`, not `npm test`;
 tag expressions include the `@` prefix.
 
+### On-demand feature-suite profile
+
+From the repository root, run the opt-in profiler:
+
+```bash
+node scripts/profile-features.js
+```
+
+The report includes per-scenario elapsed time, component totals, each scenario's
+combined Gherkin-step time and scenario-hook time, full-suite elapsed time, and
+residual setup/framework overhead. Runtime context covers Cucumber.js, Node.js,
+OS release, CPU architecture, and detected CI metadata. `BeforeStep` and
+`AfterStep` hook time is included in the Gherkin-step time; scenario hooks are
+reported separately. The runner image/label is not reported; read it from the
+CI job logs.
+
+The profiler is opt-in and leaves the normal `npm run test:features` command and
+routine CI unchanged. The full-suite prerequisites stated above still apply,
+including the real-host smoke-test requirements and
+[CI verification setup](#local-ci-verification).
+
 ### Runner-contract disk limits
 
 Every process launched through `runProcess` in

@@ -1,9 +1,14 @@
 import { When } from '@cucumber/cucumber'
-import { maxSafeHostPins, overlargeHostPins, selectedHost, withPinnedCheckout } from '../host_pin_contract_support.js'
+import { maxSafeHostPins, overlargeHostPins, selectedHost, withPinnedCheckoutBatch } from '../host_pin_contract_support.js'
 
 When('the real-host contract is requested with version components at and beyond the safe integer limit', { timeout: 300000 }, function () {
-  this.host_component_limits = [
+  const cases = [
     ...maxSafeHostPins.map(pin => ({ pin, valid: true })),
     ...overlargeHostPins.map(pin => ({ pin, valid: false })),
-  ].map(({ pin, valid }) => ({ pin, valid, ...withPinnedCheckout(pin, (checkout, temp) => selectedHost(checkout, temp, pin)) }))
+  ]
+  this.host_component_limits = withPinnedCheckoutBatch(run => cases.map(({ pin, valid }) => ({
+    pin,
+    valid,
+    ...run(pin, (checkout, temp) => selectedHost(checkout, temp, pin)),
+  })))
 })
