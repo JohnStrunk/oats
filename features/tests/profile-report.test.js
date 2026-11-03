@@ -265,6 +265,14 @@ test('fails closed on malformed URLs so hidden credentials cannot leak', () => {
   }
 })
 
+test('fails closed on protocol-relative URLs that hide credentials', () => {
+  // No scheme means no structural parse; `//` must not be echoed with its userinfo.
+  const redacted = redactReportUrl('//user:fixture-secret@ci.example/oats.git?token=fixture-token')
+  assert.equal(redacted, REDACTED_URL_PLACEHOLDER)
+  assert.ok(!redacted.includes('fixture-secret'), `redaction leaked a credential: ${redacted}`)
+  assert.ok(!redacted.includes('fixture-token'), `redaction leaked a query token: ${redacted}`)
+})
+
 test('preserves only the known safe SCP-style git remote form', () => {
   assert.equal(redactReportUrl('git@github.test:example/oats.git'), 'git@github.test:example/oats.git')
   // Any other user or trailing query/fragment cannot be vouched for.
