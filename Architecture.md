@@ -25,10 +25,15 @@ verification before support for the newly pinned release is established.
   rounds aggregated reported-cost totals toward positive infinity to the next
   cent, leaving exact-cent amounts unchanged, without changing underlying
   records or aggregation. This applies to negative totals too; any positive
-  total below one cent displays as one cent. It distinguishes
-  empty history, loading, and unavailable data, preserves known partial totals,
-  and visibly identifies incomplete totals and unattributed work. The details
-  modal presents usage by agent/model, current rates, estimated category costs,
+  total below one cent displays as one cent. It distinguishes history loading,
+  confirmed-empty history, and unavailable history, and preserves known partial
+  totals. It marks known incomplete agent-row totals with `e` and visibly
+  identifies unattributed work. If any Agent stats row carries the marker, the
+  sidebar legend reads exactly `e = estimated`; otherwise, it is omitted.
+  Unknown totals remain distinct from zero. Summary-level data gaps without a
+  row-level marker have no separate sidebar incompleteness indicator. The
+  sidebar displays no standalone `Summary incomplete` notice. The details modal
+  presents usage by agent/model, current rates, estimated category costs,
   reported costs, and uncertainty.
 - **`session-data-access`**: Supplies available historical and live individual
   usage records for the displayed session and its descendants, retaining recorded
@@ -102,8 +107,11 @@ the details view uses the same session scope and current model pricing:
    including nested delegated work and combining repeated invocations. Settled
    usage updates the displayed costs; session switching changes the displayed
    scope without retaining the previous session's totals. Reopening a collapsed
-   section presents current data. Status and uncertainty remain visible rather
-   than converting missing or ambiguous data into a complete zero-cost result.
+   section presents current data. History loading, confirmed-empty history, and
+   unavailable history remain distinct. Missing or ambiguous totals remain
+   unknown rather than becoming zero. Incomplete agent-row totals use the `e`
+   marker and conditional legend described above. Summary-level data gaps
+   without a row-level marker have no separate sidebar incompleteness indicator.
 4. Pricing attribution combines usage with available current rates to form an
    estimated breakdown, distinct from recorded costs.
 5. The details view presents these breakdowns, including gaps and uncertainty,

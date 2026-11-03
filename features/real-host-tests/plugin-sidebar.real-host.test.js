@@ -33,7 +33,7 @@ const ANY_AGENT_ROW = /\balpha\b[^\n]*\$3\.00|\bbeta\b[^\n]*\$2\.00|\bgamma\b[^\
 const EXPANDED_HEADING = /▼ Agent stats/
 const COLLAPSED_HEADING = /▶ Agent stats/
 const OLD_HEADING_GLYPH = /[▸▾] Agent stats/
-const LEGEND = 'e = incomplete total'
+const LEGEND = 'e = estimated'
 
 async function openCommandPalette(tui) {
   tui.send('\x10')
@@ -168,6 +168,11 @@ test(
         rendered,
         OLD_HEADING_GLYPH,
         'the section must not use the previous small-triangle indicators',
+      )
+      assert.doesNotMatch(
+        rendered,
+        /^\s*Summary incomplete\s*$/m,
+        'the section must not add a standalone summary-incomplete notice',
       )
       assert.match(
         rendered,

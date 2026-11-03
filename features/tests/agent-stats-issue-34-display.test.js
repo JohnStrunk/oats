@@ -26,6 +26,19 @@ const records = (entries) =>
 
 const expectedRow = ({ label, value, marker }) => ({ label, value, marker })
 
+function fittedName(name, width) {
+  if (displayWidth(name) <= width) return name
+  let prefix = ''
+  let used = 0
+  for (const character of name) {
+    const next = displayWidth(character)
+    if (used + next + displayWidth('…') > width) break
+    prefix += character
+    used += next
+  }
+  return `${prefix}…`
+}
+
 test('mixed complete, incomplete, unknown, bounded and unattributed rows align', () => {
   const lines = agentStatsLines(snapshot(records([
     ['alpha', 0],
@@ -50,7 +63,7 @@ test('mixed complete, incomplete, unknown, bounded and unattributed rows align',
   assert.ok(rows.every((row) => row.markerSlot === (row.marker === 'e' ? 'e' : ' ')))
   assert.ok(rows.every((row) => row.width <= MAX_HOST_CONTENT_WIDTH), rows.map((row) => row.width).join(', '))
   assert.equal(legendCount(lines), 1)
-  assert.ok(lines.includes('Summary incomplete'))
+  assert.ok(!lines.includes('Summary incomplete'))
 })
 
 test('an unknown total remains unavailable rather than zero, with no e or legend', () => {
@@ -71,7 +84,7 @@ test('an unknown total remains unavailable rather than zero, with no e or legend
   assert.equal(bucket.markerSlot, ' ')
   assert.ok(!costRows(lines).some((row) => row.value === '$0.00' && row.label !== 'known-zero'))
   assert.equal(legendCount(lines), 0, 'unknown totals do not add an e legend')
-  assert.ok(lines.includes('Summary incomplete'))
+  assert.ok(!lines.includes('Summary incomplete'))
 })
 
 test('complete and incomplete zero totals share the value column but differ in marker', () => {
@@ -115,7 +128,7 @@ test('directional bounds keep their marker immediately after the value', () => {
   assert.equal(legendCount(lines), 1)
 })
 
-test('wide and truncated labels keep left alignment and the shared value column', () => {
+test('wide names stay complete when they fit and other names use their own row width', () => {
   const lines = agentStatsLines(snapshot(records([
     ['代理代理代理代理代理', 3],
     [`a${'\u{1B000}'.repeat(20)}`, null],
@@ -126,15 +139,42 @@ test('wide and truncated labels keep left alignment and the shared value column'
   const rows = costRows(lines)
 
   assert.deepEqual(rows.map(expectedRow), [
-    { label: '代理代理代理代…', value: '$3.00', marker: 'blank' },
+    { label: '代理代理代理代理代理', value: '$3.00', marker: 'blank' },
     { label: `a${'\u{1B000}'.repeat(7)}…`, value: 'unavailable', marker: 'blank' },
-    { label: '😀😀😀😀😀😀😀…', value: '$1.00', marker: 'e' },
+    { label: '😀'.repeat(10), value: '$1.00', marker: 'e' },
     { label: 'plain', value: '$0.00', marker: 'blank' },
   ])
   assert.ok(rows.every((row) => row.labelAt === 0))
   assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
   assert.ok(rows.every((row) => row.width <= MAX_HOST_CONTENT_WIDTH), rows.map((row) => row.width).join(', '))
   assert.equal(legendCount(lines), 1)
+})
+
+test('generated names use all width left by each row value and marker before ellipsizing', () => {
+  fc.assert(
+    fc.property(
+      fc.integer({ min: 1, max: 50 }),
+      fc.constantFrom('complete', 'unknown'),
+      (length, kind) => {
+        const name = `agent-${'x'.repeat(length)}`
+        const entries = kind === 'unknown'
+          ? [{ agent: name, cost: null }]
+          : [{ agent: name, cost: 3.25 }]
+        const lines = agentStatsLines(snapshot(entries), 'root')
+        const rows = costRows(lines)
+
+        assert.equal(rows.length, 1, lines.join('\n'))
+        const [row] = rows
+        const availableNameWidth = row.valueAt - row.labelAt - 2 // colon and one separator cell
+        assert.ok(availableNameWidth > 0, row.line)
+        assert.equal(row.label, fittedName(name, availableNameWidth), row.line)
+        assert.ok(row.width <= MAX_HOST_CONTENT_WIDTH, `${row.width} columns: ${row.line}`)
+        assert.equal(row.marker, 'blank')
+        assert.equal(legendCount(lines), 0)
+      },
+    ),
+    { seed: 470047, numRuns: 40, endOnFailure: true },
+  )
 })
 
 test('sanitized colliding labels remain unique, inert and right aligned', () => {
@@ -178,8 +218,8 @@ test('the e legend appears exactly once only when an e marker is visible', () =>
   assert.equal(legendCount(unknown), 0)
   assert.equal(legendCount(gapOnly), 0)
   assert.equal(legendCount(mixed), 1)
-  assert.ok(mixed.filter((line) => line === INCOMPLETE_LEGEND).length === 1)
-  assert.ok(mixed.includes('Summary incomplete'))
+  assert.equal(mixed.filter((line) => line === INCOMPLETE_LEGEND).length, 1)
+  assert.ok(!mixed.includes('Summary incomplete'))
 })
 
 test('generated rows always share a value end and put the marker in the next cell', () => {

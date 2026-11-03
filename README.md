@@ -90,22 +90,31 @@ settles usage at step boundaries, not for every streamed token. Collapsing the
 section does not leave stale data when it is reopened. Unrelated sessions and
 the previously displayed session subtree are not included in the new scope.
 
-The display distinguishes confirmed empty history from loading or unavailable
-data. If history may be missing, an empty result is reported as incomplete,
-not as confirmed empty. OpenCode 2.0.32 generally cannot establish a complete
-historical event log, including for a session with no available records.
-Partial results retain known costs and identify incompleteness; missing or
-ambiguous costs are not shown as complete zero-cost totals. Work without a
-recorded agent name is identified as unattributed rather than silently dropped
-or assigned to another agent. A complete-looking agent row does not establish
-complete history when the overall summary indicates missing data.
-Known incomplete totals carry an `e` suffix, with the legend
-`e = incomplete total`. Unknown totals display as `unavailable`, without an
-`e` suffix. **Unattributed** rows use the same alignment and completeness
-formatting as named-agent rows.
-Long or unsafe agent names are displayed as bounded inert text. If displayed
-names would collide, numbered suffixes distinguish their rows; aggregation
-continues to use the original recorded names.
+The sidebar distinguishes loading, confirmed empty history, and unavailable
+history. A complete-looking agent row is not proof that history is complete.
+Summary-level history gaps without any row-level `e` marker are not separately
+indicated in the sidebar.
+
+Observed behavior in OpenCode 2.0.32 is that historical events are typically
+not persisted; this is a version-specific observation, not established for
+later releases. Some event-only usage and retry attempts may therefore be
+unreconstructible after an event is lost. Persisted records do not guarantee a
+complete execution history, and refreshing cannot recover data the host no
+longer has.
+
+Work without a recorded agent name is identified as unattributed rather than
+silently dropped or assigned to another agent. **Unattributed** rows use the
+same alignment and completeness formatting as named-agent rows.
+
+Known incomplete row totals remain visible with a lowercase `e` marker. When
+at least one row has `e`, the sidebar displays the legend `e = estimated`
+exactly once; it omits the legend when no row has `e`. Unknown totals display
+as `unavailable`, without an `e` marker.
+
+Each agent row uses its own available label width. Safe names are shown in full
+when they fit and ellipsized only when needed. Labels are disambiguated only
+when their fitted forms collide; disambiguation does not change attribution to
+the original recorded names.
 
 **Reported costs only:** these values are informational OpenCode-reported
 costs, not estimates derived from token rates or billing guarantees. A reported

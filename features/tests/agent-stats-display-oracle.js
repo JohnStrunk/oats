@@ -1,7 +1,7 @@
 // Independent layout oracle for the Agent stats sidebar rows. Keep this out of
 // src/agent-stats.js so a formatting regression cannot validate itself.
 
-export const INCOMPLETE_LEGEND = 'e = incomplete total'
+export const INCOMPLETE_LEGEND = 'e = estimated'
 
 // The pinned host's sidebar is 42 cells wide: 2 left padding, 2 right padding
 // and 1 right scrollbar cell. Use the resulting 37-cell content edge as an

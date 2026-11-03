@@ -8,9 +8,16 @@ without leaving the terminal or piecing together separate session records.
 The reporting experience includes a collapsible **Agent stats** section in
 the session sidebar, alongside the **OATS loaded** startup toast. It shows known
 OpenCode-reported costs by recorded agent name across the displayed session and
-nested delegated work, combining repeated invocations. Incomplete totals and
-unattributed work remain visible; empty history, loading, and unavailable data
-are distinct rather than implying that work cost nothing.
+nested delegated work, combining repeated invocations. Known incomplete
+agent-row totals remain visible with an `e` marker. If at least one Agent stats
+row has the marker, the sidebar legend reads exactly `e = estimated`; if none
+do, the legend is omitted.
+Summary-level gaps without a row-level marker have no separate sidebar
+incompleteness indicator; the sidebar displays no standalone
+`Summary incomplete` notice.
+Unattributed work remains visible. History loading, confirmed-empty history,
+and unavailable history are distinct, and unknown totals remain distinct from
+zero.
 
 The section starts expanded and supports mouse and keyboard toggling. The
 user's expansion choice is shared across sessions for the application lifetime,

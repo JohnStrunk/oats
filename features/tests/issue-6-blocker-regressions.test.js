@@ -4,7 +4,7 @@ import plugin from '../../src/tui.js'
 import { agentStatsLines } from '../../src/agent-stats.js'
 import { createSessionDataAccess } from '../../src/session-data-access.js'
 import { hostFixture, waitForSnapshot } from '../steps/session_data_helper.js'
-import { costRows, rowFor } from './agent-stats-display-oracle.js'
+import { MAX_HOST_CONTENT_WIDTH, costRows, rowFor } from './agent-stats-display-oracle.js'
 
 const snapshot = (records = [], options = {}) => ({
   sessionID: 'root', records, complete: true, gaps: [], errors: [], ...options,
@@ -120,7 +120,7 @@ test('disposing from an abort handler prevents the replacement host read', async
 test('empty snapshots distinguish benign gaps from withheld history', () => {
   for (const gap of ['historical-usage-unavailable', 'retry-history-unavailable']) {
     const lines = agentStatsLines(snapshot([], { complete: false, gaps: [{ kind: gap }] }), 'root')
-    assert.ok(lines.includes('Summary incomplete'))
+    assert.ok(!lines.includes('Summary incomplete'))
     assert.ok(lines.includes('No agent usage recorded'))
   }
   const withheld = agentStatsLines(snapshot([], { complete: false, gaps: [{ kind: 'fork-history-unavailable' }] }), 'root')
@@ -128,7 +128,7 @@ test('empty snapshots distinguish benign gaps from withheld history', () => {
   assert.ok(agentStatsLines(snapshot(), 'root').includes('No agent usage recorded'))
   const partial = agentStatsLines(snapshot([record('alpha', 2)], { complete: false, gaps: [{ kind: 'historical-usage-unavailable' }] }), 'root')
   assert.equal(rowFor(partial, 'alpha').value, '$2.00')
-  assert.ok(partial.includes('Summary incomplete'))
+  assert.ok(!partial.includes('Summary incomplete'))
 })
 
 test('sanitized, truncated and reserved names remain visibly distinct', () => {
@@ -143,7 +143,7 @@ test('sanitized, truncated and reserved names remain visibly distinct', () => {
   const labels = rows.map((row) => row.label)
   assert.equal(labels.length, 7)
   assert.equal(new Set(labels).size, 7)
-  assert.ok(labels.every((label) => Array.from(label).length <= 16))
+  assert.ok(rows.every((row) => row.width <= MAX_HOST_CONTENT_WIDTH), rows.map(row => row.line).join('\n'))
   assert.ok(rows.some((row) => row.value === '$9.00'))
   assert.equal(rowFor(lines, 'Unattributed').value, '$7.00')
   assert.ok(rows.some((row) => row.label.startsWith('Unattributed') && row.label !== 'Unattributed' && row.value === '$6.00'))

@@ -52,10 +52,12 @@ function agentRow(line) {
   // messages. Require a colon or a visible column gap to avoid treating those
   // messages as cost rows; still fail closed on unrecognized extra rows.
   const match = line.match(/^\s*[│┃]?\s*(.+?)(?:\s*:\s*|\s{2,})((?:[<>]?-?\$\s*[-+\d.]|unavailable\b|unknown\b).*)$/i)
-  return match ? { name: match[1].trim(), line, tail: match[2], cost: amountFor(line), value: displayedValue(line) } : null
+  if (!match) return null
+  const value = displayedValue(line) ?? match[2].trim().match(/^(?:unavailable|unknown)\b/i)?.[0] ?? null
+  return { name: match[1].trim(), line, tail: match[2], cost: amountFor(line), value }
 }
 
-const isIncompleteLegend = line => line.trim() === 'e = incomplete total'
+const isIncompleteLegend = line => line.trim() === 'e = estimated'
 const hasIncompleteMarker = value => /\$-?\d+\.\d{2}e(?=\s|[│┃]|$)/.test(value)
 
 export function sidebarAgentRows(text) {
@@ -68,8 +70,9 @@ export function sidebarRowsMatch(text, expected) {
   const lines = sidebarSectionLines(text)
   // Fail closed for an unrecognized displayed row, rather than silently
   // dropping an invented agent whose value is malformed or lacks a dollar
-  // sign. Summary/history status lines are not agent rows.
-  if (lines.some(line => !agentRow(line) && !isIncompleteLegend(line) && !/^\s*(?:summary|history)\b(?!\s*:)/i.test(line))) return false
+  // sign. History states and the exact legend are the only non-row content
+  // accepted alongside a populated cost table.
+  if (lines.some(line => !agentRow(line) && !isIncompleteLegend(line) && !/^\s*history\b(?!\s*:)/i.test(line))) return false
   const actual = lines.map(agentRow).filter(Boolean)
   if (actual.some(row => !/^(?:[<>]?-?\$-?\d+\.\d{2}e?|unavailable)\s*[│┃]?\s*$/.test(row.tail))) return false
   const markers = actual.some(row => hasIncompleteMarker(row.tail))
@@ -94,14 +97,15 @@ export function agentIncomplete(text, name) {
   return marked || /^unavailable\s*[│┃]?\s*$/i.test(value)
 }
 
-function statusText(text) {
-  return sidebarSectionLines(text).filter(line => !agentRow(line)).join(' ')
-}
-
-export function summaryIncomplete(text) {
-  if (sectionIsCollapsed(text)) return false
-  return sidebarSectionLines(text).filter(line => !agentRow(line)).some(line =>
-    /\bsummary\b.*\b(?:incomplete|partial|unavailable)\b|\b(?:incomplete|partial|unavailable)\b.*\bsummary\b/i.test(line))
+export function summaryNoticeAbsent(text) {
+  const heading = text.split('\n').find(line => line.includes('Agent stats'))
+  if (!heading || sectionIsCollapsed(text)) return false
+  // Only the existing history states and marker legend are valid non-row
+  // content, so a differently worded summary-incompleteness replacement also
+  // fails this boundary assertion.
+  const allowedStatus = /^\s*(?:Loading session history…|No agent usage recorded|Session history unavailable)\s*$/i
+  return !sidebarSectionLines(text).some(line =>
+    !agentRow(line) && !isIncompleteLegend(line) && !allowedStatus.test(line))
 }
 
 export function historyState(text, state) {

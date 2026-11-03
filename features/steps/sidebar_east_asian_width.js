@@ -51,3 +51,15 @@ export function isEastAsianWide(codePoint) {
   }
   return false
 }
+
+export function terminalCellWidth(text) {
+  let width = 0
+  for (const char of text) {
+    const codePoint = char.codePointAt(0)
+    // Combining marks, variation selectors and joiners attach to the
+    // preceding terminal cell, matching the screen model used by the PTY test.
+    if (/\p{Mark}/u.test(char) || codePoint === 0xfe0f || codePoint === 0x200d) continue
+    width += isEastAsianWide(codePoint) || (codePoint >= 0x1f300 && codePoint <= 0x1faff) ? 2 : 1
+  }
+  return width
+}

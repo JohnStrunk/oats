@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { After } from '@cucumber/cucumber'
 import { launchSidebar, stopSidebar } from './sidebar_lifecycle_helper.js'
 import { createSidebarTemp } from './sidebar_temp_helper.js'
-export { agentIncomplete, amountFor, collapsedWithoutContent, displayedValue, historyState, rowFor, rowsFor, rowsRemain, sidebarAgentRows, sidebarRowsMatch, summaryIncomplete } from './sidebar_section_helper.js'
+export { agentIncomplete, amountFor, collapsedWithoutContent, displayedValue, historyState, rowFor, rowsFor, rowsRemain, sidebarAgentRows, sidebarRowsMatch, summaryNoticeAbsent } from './sidebar_section_helper.js'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const model = { providerID: 'fixture-provider', id: 'fixture-model' }
@@ -51,6 +51,10 @@ export function makeSidebarFixture(name) {
       fixture.sessions = [session('root')]
       fixture.messages = { root: [msg('partial-1', 'partial', 2), msg('partial-2', 'partial', null), msg('unknown', 'unknown', null), msg('unattributed', null, 3)] }
       break
+    case 'summary incomplete agent':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [msg('summary-incomplete', 'Summary incomplete', 1)] }
+      break
     case 'aligned mixed':
       fixture.sessions = [session('root')]
       fixture.messages = { root: [msg('a', 'alpha', 0), msg('b1', 'beta', 1.2), msg('b2', 'beta', null), msg('c', 'gamma', null), msg('d', 'delta', -10000), msg('u1', null, 3), msg('u2', null, null)] }
@@ -63,6 +67,25 @@ export function makeSidebarFixture(name) {
       fixture.sessions = [session('root')]
       fixture.messages = { root: [msg('a', 'alpha', null), msg('u', null, null)] }
       break
+    case 'name sizing': {
+      fixture.sessions = [session('root')]
+      const longComplete = 'abcdefghijklmnopqrstuvwx1234'
+      const longUnknown = 'bcdefghijklmnopqrstuvwxy1234'
+      const longIncomplete = 'cdefghijklmnopqrstuvwxy12345'
+      fixture.messages = { root: [
+        msg('name-short', 'short', 1),
+        msg('name-medium', 'medium-agent-name', 2),
+        msg('name-long-complete', longComplete, 3),
+        msg('name-long-unknown', longUnknown, null),
+        msg('name-long-incomplete', longIncomplete, 10000),
+        msg('name-long-incomplete-missing', longIncomplete, null),
+        msg('name-prefix-alpha', 'abcdefghijklmnop-alpha', 4),
+        msg('name-prefix-beta', 'abcdefghijklmnop-beta', 5),
+        msg('name-prefix-short-a', 'abcdefghijklmnop-a', 100),
+        msg('name-prefix-short-b', 'abcdefghijklmnop-b', 6),
+      ] }
+      break
+    }
     case 'partial failure':
       fixture.failures = ['message:child:0']
       break
