@@ -121,7 +121,8 @@ both Antigravity and OpenCode v2:
    architectural boundaries while the `security` agent inspects code and
    configurations for security vulnerabilities against OWASP standards,
    jointly certifying readiness for commit.
-6. **Describe the change:** Agents must include a demo or walkthrough in every
-   PR description, appropriate to the change, explaining what changed and
-   providing relevant evidence and reproducible steps where applicable.
-   Documentation-only changes can use a walkthrough.
+6. **Describe the change:** Agents must include an appropriate demo or
+   walkthrough in every PR description, explaining what changed and providing
+   relevant evidence and reproducible steps. Do not add demos or walkthroughs
+   as committed repository files. Documentation-only changes may use a
+   walkthrough in the PR description.
