@@ -10,10 +10,15 @@ OpenCode-reported costs by recorded agent name; Model stats groups known
 reported costs by recorded model ID, combining the same ID across providers and
 agents. Both sections cover the displayed session and its descendants. Work
 without a usable recorded model ID remains **Unattributed**. Model stats uses
-each record's model ID, not the currently selected model, and shows reported
-costs rather than price estimates. The **(details)** link in Agent stats opens
-a live breakdown by agent and model, with token counts and estimated category
-costs at current model prices.
+each record's model ID for grouping, not the currently selected model;
+catalogue-only and currently selected models do not create or replace rows.
+Each row label uses the catalogue `name` for its usage provider. If an ID
+appears in usage from multiple providers with different catalogue names, use the
+`name` for the provider on the earliest recorded usage for that ID; if that
+matching `name` is missing or empty, the recorded ID remains the label. Model
+stats shows reported costs rather than price estimates. The **(details)** link
+in Agent stats opens a live breakdown by agent and model, with token counts and
+estimated category costs at current model prices.
 
 ## Try the local plugin
 
@@ -155,10 +160,17 @@ comparisons remain planned.
    **Model stats** beside **Agent stats**; it starts expanded.
 2. Each row shows the total known OpenCode-reported cost for one recorded model
    ID in the displayed session subtree, including nested delegated work.
-   Matching IDs combine across providers and agents. Model stats uses the ID on
-   each usage record, not the currently selected model or model-catalogue
-   metadata. Work without a usable recorded model ID remains in an
-   **Unattributed** row rather than being dropped or assigned to another ID.
+   Matching IDs combine into one row across providers and agents. Grouping uses
+   the ID on each usage record, not the currently selected model. Catalogue-only
+   and currently selected models do not create or replace rows. Each row label
+   uses the catalogue `name` for its usage provider. If an ID appears in usage
+   from multiple providers with different catalogue names, use the `name` for
+   the provider on the earliest recorded usage for that ID; if that matching
+   `name` is missing or empty, the recorded model ID remains the label. Labels
+   retain the existing truncation and collision-disambiguation behavior: they
+   stay full when they fit and shorten only when width or a collision requires
+   it. Work without a usable recorded model ID remains in an **Unattributed**
+   row rather than being dropped or assigned to another ID.
    Model stats reports recorded costs only; it does not calculate price
    estimates.
 3. Click the **Model stats** title to collapse or expand this section without
@@ -266,11 +278,14 @@ individual reported cost is counted once under the agent that performed the
 work, without adding delegated tree totals again.
 
 Model stats groups reported costs by recorded model ID in the same session
-subtree, combining matching IDs across providers and agents. It uses the ID on
-each usage record rather than the currently selected model or model-catalogue
-metadata. Work without a usable recorded model ID remains in an **Unattributed**
-row, preserving its known reported cost instead of assigning it to another
-model ID or dropping it. Model stats does not derive provider-price estimates.
+subtree, combining matching IDs across providers and agents in one row per
+usable ID. The grouping uses the ID on each usage record rather than the
+currently selected model; catalogue-only and currently selected models do not
+create or replace rows. Row-label selection follows the provider/name
+precedence described in [Try Model stats](#try-model-stats). Work without a
+usable recorded model ID remains in an **Unattributed** row, preserving its
+known reported cost instead of assigning it to another model ID or dropping it.
+Model stats does not derive provider-price estimates.
 
 Summaries retain known totals and indicate incompleteness. Missing or ambiguous
 cost is not treated as zero; an agent or model group with no known cost has no

@@ -9,12 +9,17 @@ The reporting experience includes sibling, independently collapsible
 **Agent stats** and **Model stats** sections in the session sidebar, alongside
 the **OATS loaded** startup toast. Agent stats shows known OpenCode-reported
 costs by recorded agent name across the displayed session and nested delegated
-work, combining repeated invocations. Model stats groups reported costs by the
-recorded model identifier (model ID/name), combining matching identifiers
-across providers and agents. It uses the identity on each usage record, not the
-currently selected model or model-catalogue metadata. Work without a usable
-recorded model identity remains visible as **Unattributed**; Model stats shows
-reported costs only and does not derive provider-price estimates.
+work, combining repeated invocations. Model stats groups reported costs by
+recorded model ID, combining matching IDs across providers and agents into one
+row per usable ID. It uses the ID on each usage record, not the currently
+selected model, to determine grouping; catalogue-only and currently selected
+models do not create or replace rows. A row label uses the catalogue `name` for
+its usage provider. If an ID appears in usage from multiple providers with
+different catalogue names, use the `name` for the provider on the earliest
+recorded usage for that ID; if that matching `name` is missing or empty, the
+recorded model ID remains the label. Work without a usable recorded model ID
+remains visible as **Unattributed**; Model stats shows reported costs only and
+does not derive provider-price estimates.
 
 Known incomplete row totals remain visible with an `e` marker. Each section has
 its own `e = estimated` legend, shown exactly once if that section has a row
@@ -31,8 +36,9 @@ summaries follow the displayed session and its descendants. Available history
 appears when a session opens; session and settled-usage updates keep both
 summaries current, including after either is reopened from a collapsed state.
 
-Model stats gives each recorded model identifier a row, keeps the full label
-when it fits, and shortens it only when width or a collision requires it. Row
+Model stats gives each usable recorded model ID a row. It keeps the row label full
+when it fits and shortens it only when width or a collision requires it,
+preserving the existing truncation and collision-disambiguation behavior. Row
 labels align left and reported-cost values align right.
 
 The sidebar's **(details)** link opens a scrollable usage-details modal for the

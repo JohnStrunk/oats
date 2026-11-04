@@ -35,13 +35,20 @@ verification before support for the newly pinned release is established.
   data gaps without a row-level marker have no separate sidebar incompleteness
   indicator, and neither section displays a standalone `Summary incomplete`
   notice. Unattributed work remains visible. Model stats groups reported costs
-  by recorded model identifier across providers and agents, not by the currently
-  selected model; rows without a usable identifier remain **Unattributed**. It
-  displays reported costs rather than provider-price estimates. Model labels
-  align left and cost values right; labels stay full when they fit and shorten
-  only when width or a collision requires it. The details modal presents usage
-  by agent/model, current rates, estimated category costs, reported costs, and
-  uncertainty.
+  by recorded model ID across providers and agents, with one row per usable ID;
+  the selected model does not determine grouping. Catalogue-only and currently
+  selected models do not create or replace rows. Rows without a usable ID remain
+  **Unattributed**. Each row label uses the catalogue `name` for its usage
+  provider. If an ID appears in usage from multiple providers with different
+  catalogue names, use the `name` for the provider on the earliest recorded
+  usage for that ID; if that matching `name` is missing or empty, use the
+  recorded model ID.
+  Model stats displays reported costs rather than provider-price estimates.
+  Model labels align left and cost values right and retain the existing
+  truncation and collision-disambiguation behavior, staying full when they fit
+  and shortening only when width or a collision requires it. The details modal
+  presents usage by agent/model, current rates,
+  estimated category costs, reported costs, and uncertainty.
 - **`session-data-access`**: Supplies available historical and live individual
   usage records for the displayed session and its descendants, retaining recorded
   agent and model identities and OpenCode-reported costs. It exposes missing
@@ -115,12 +122,20 @@ the details view uses the same session scope and current model pricing:
    component itself has no reactive subscription or UI ownership.
 3. The plugin UI requests summaries for available history when a session opens
    and as scoped data changes. It presents one row per recorded agent name in
-   Agent stats and one per usable recorded model identifier in Model stats,
-   including nested delegated work and combining repeated invocations. Model
-   stats uses recorded identity, not the currently selected model, and displays
-   reported costs rather than provider-price estimates. Model labels align left
-   and cost values right; labels stay full when they fit and shorten only when
-   width or a collision requires it. Settled usage updates the displayed costs;
+   Agent stats and one per usable recorded model ID in Model stats, including
+   nested delegated work and combining repeated invocations. Matching IDs share
+   one row across providers and agents. Model stats groups by recorded model ID,
+   not the currently selected model, and displays reported costs rather than
+   provider-price estimates. Catalogue-only and currently selected models do
+   not create or replace rows. Each row label uses the catalogue `name` for its
+   usage provider. If an ID appears in usage from multiple providers with
+   different catalogue names, use the `name` for the provider on the earliest
+   recorded usage for that ID; if that matching `name` is missing or empty, the
+   recorded ID remains the label.
+   Labels align left and cost values right and retain the existing truncation
+   and collision-disambiguation behavior: they stay full when they fit and
+   shorten only when width or a collision requires it. Settled usage updates
+   the displayed costs;
    session switching changes both summaries' scope without retaining the
    previous session's totals. Reopening a collapsed section presents current
    data. Both sections start expanded and toggle independently, with separate
@@ -140,9 +155,13 @@ the details view uses the same session scope and current model pricing:
 ## Limitations and Open Definitions
 
 - Agent configuration or a currently selected model is not proof of the model
-  used for earlier work. Model stats groups by the recorded model identifier,
-  combining the same identifier across providers and agents rather than using
-  current selection or catalogue metadata. In contrast, the details view keeps
+  used for earlier work. Model stats groups by the recorded model ID, combining
+  the same ID across providers and agents; the current selection does not
+  determine the group or create or replace rows. The catalogue `name` is used
+  only for the row label. If providers have different catalogue names for the
+  same ID, use the name for the provider on that ID's earliest recorded usage;
+  if that matching name is missing or empty, the recorded ID is the label.
+  Catalogue-only models do not create rows. In contrast, the details view keeps
   provider/model identities distinct. Attribution depends on recorded execution
   identities, and a session may contain work from multiple models.
 - OpenCode v2.0.32 typically does not persist historical events. This observation

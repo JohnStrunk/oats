@@ -10,8 +10,8 @@ export { agentIncomplete, amountFor, collapsedWithoutContent, displayedValue, hi
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const model = { providerID: 'fixture-provider', id: 'fixture-model' }
 const tokens = { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } }
-const msg = (id, agent, cost, recordedModel = model, recordedTokens = tokens) => ({
-  id, type: 'assistant', time: { created: 1, completed: 2 }, content: [], model: recordedModel, tokens: recordedTokens,
+const msg = (id, agent, cost, recordedModel = model, recordedTokens = tokens, createdAt = 1) => ({
+  id, type: 'assistant', time: { created: createdAt, completed: createdAt + 1 }, content: [], model: recordedModel, tokens: recordedTokens,
   ...(agent == null ? {} : { agent }),
   ...(cost == null ? {} : { cost }),
 })
@@ -28,7 +28,7 @@ export function makeSidebarFixture(name) {
       child2: [msg('c2', 'worker-two', 3)],
       other: [msg('o1', 'other', 10)],
     },
-    failures: [], events: [], blockRoot: false,
+    failures: [], events: [], blockRoot: false, models: [],
   }
   switch (name) {
     case 'history': break
@@ -65,6 +65,46 @@ export function makeSidebarFixture(name) {
         providerID: 'catalog-provider', id: 'currently-selected-model', name: 'currently-selected-model',
         cost: { input: 100, output: 100, cache: { read: 100, write: 100 } },
       }]
+      break
+    case 'model catalogue labels':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [
+        msg('catalogue-alpha', 'alpha', 3, { providerID: 'provider-one', id: 'alpha-id' }, tokens, 1),
+        msg('catalogue-beta', 'beta', 5, { providerID: 'provider-two', id: 'beta-id' }, tokens, 2),
+        msg('shared-id-first-provider', 'first-provider', 1, { providerID: 'provider-one', id: 'shared-id' }, tokens, 3),
+        msg('shared-id-second-provider', 'second-provider', 2, { providerID: 'provider-two', id: 'shared-id' }, tokens, 4),
+        msg('catalogue-entry-missing', 'no-entry', 7, { providerID: 'provider-three', id: 'no-entry-id' }, tokens, 5),
+        msg('catalogue-name-missing', 'no-name', 11, { providerID: 'provider-four', id: 'no-name-id' }, tokens, 6),
+        msg('catalogue-entry-later-provider', 'later-name', 2, { providerID: 'provider-two', id: 'no-entry-id' }, tokens, 7),
+        msg('catalogue-name-empty', 'empty-name', 4, { providerID: 'provider-five', id: 'empty-name-id' }, tokens, 8),
+        msg('catalogue-name-whitespace', 'whitespace-name', 6, { providerID: 'provider-six', id: 'whitespace-name-id' }, tokens, 9),
+      ] }
+      // Catalogue order deliberately differs from recorded-use order. Distinct
+      // IDs share a display name, one ID has provider-specific names, and a
+      // later name must not replace the earliest provider's missing entry.
+      fixture.models = [
+        { providerID: 'provider-two', id: 'beta-id', name: 'Shared Name' },
+        { providerID: 'provider-one', id: 'alpha-id', name: 'Shared Name' },
+        { providerID: 'provider-two', id: 'shared-id', name: 'Second Provider Name' },
+        { providerID: 'provider-one', id: 'shared-id', name: 'First Provider Name' },
+        { providerID: 'provider-two', id: 'no-entry-id', name: 'Borrowed Later Name' },
+        { providerID: 'provider-four', id: 'no-name-id' },
+        { providerID: 'provider-five', id: 'empty-name-id', name: '' },
+        { providerID: 'provider-six', id: 'whitespace-name-id', name: '   ' },
+        { providerID: 'catalog-provider', id: 'currently-selected-model', name: 'Currently Selected Model' },
+      ]
+      break
+    case 'async client model catalogue':
+      fixture.sessions = [session('root')]
+      fixture.modelCatalogueSource = 'client'
+      fixture.messages = { root: [
+        msg('client-catalogue-first-provider', 'first', 2, { providerID: 'async-provider-one', id: 'async-model-id' }, tokens, 1),
+        msg('client-catalogue-second-provider', 'second', 3, { providerID: 'async-provider-two', id: 'async-model-id' }, tokens, 2),
+      ] }
+      fixture.models = [
+        { providerID: 'async-provider-two', id: 'async-model-id', name: 'Later Async Name' },
+        { providerID: 'async-provider-one', id: 'async-model-id', name: 'Async Catalogue Name' },
+      ]
       break
     case 'model incomplete':
       fixture.sessions = [session('root')]
@@ -152,7 +192,19 @@ export function makeSidebarFixture(name) {
       fixture.messages = { root: [
         msg('model-terminal-control', 'control-agent', 1, { providerID: 'provider', id: 'clip\x1b]52;c;YQ==\x07' }),
         msg('model-bidi-control', 'bidi-agent', 2, { providerID: 'provider', id: 'bidi\u202elabel' }),
+        msg('catalogue-terminal-control', 'catalogue-control-agent', 3, { providerID: 'provider', id: 'catalogue-terminal-control-model' }),
+        msg('catalogue-bidi-control', 'catalogue-bidi-agent', 4, { providerID: 'provider', id: 'catalogue-bidi-model' }),
+        msg('catalogue-overlong-control', 'catalogue-overlong-agent', 5, { providerID: 'provider', id: 'catalogue-overlong-model' }),
+        msg('catalogue-title-control', 'catalogue-title-agent', 6, { providerID: 'provider', id: 'catalogue-title-control-model' }),
+        msg('catalogue-cursor-control', 'catalogue-cursor-agent', 7, { providerID: 'provider', id: 'catalogue-cursor-control-model' }),
       ] }
+      fixture.models = [
+        { providerID: 'provider', id: 'catalogue-terminal-control-model', name: 'namedclip\x1b]52;c;YQ==\x07' },
+        { providerID: 'provider', id: 'catalogue-bidi-model', name: 'namedbidi\u202elabel' },
+        { providerID: 'provider', id: 'catalogue-overlong-model', name: `catalogue-${'overlong-'.repeat(8)}\x1b]52;c;YQ==\x07\u202e-tail` },
+        { providerID: 'provider', id: 'catalogue-title-control-model', name: '\x1b]0;OATS_NAME_SAFETY_TITLE\x1b\\' },
+        { providerID: 'provider', id: 'catalogue-cursor-control-model', name: '\x1b[987;654H' },
+      ]
       break
     case 'model notice label':
       fixture.sessions = [session('root')]

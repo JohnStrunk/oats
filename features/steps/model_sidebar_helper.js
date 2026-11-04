@@ -57,20 +57,33 @@ export function modelStatsSectionHasRow(text, name) {
   return modelStatsSectionLines(text).some(line => label.test(line))
 }
 
-export function modelStatsRowsMatch(text, expected) {
-  if (!text.split('\n').some(line => line.includes('Model stats')) || modelStatsCollapsed(text)) return false
+function validModelStatsRows(text) {
+  if (!text.split('\n').some(line => line.includes('Model stats')) || modelStatsCollapsed(text)) return null
   const lines = modelStatsSectionLines(text)
-  if (lines.some(line => !modelRow(line) && line.trim() !== LEGEND && !STATUS.test(line))) return false
+  if (lines.some(line => !modelRow(line) && line.trim() !== LEGEND && !STATUS.test(line))) return null
   const rows = lines.map(modelRow).filter(Boolean)
-  if (rows.some(row => !/^(?:[<>]?-?\$-?\d+\.\d{2}e?|unavailable)\s*[│┃]?\s*$/.test(row.tail))) return false
+  if (rows.some(row => !/^(?:[<>]?-?\$-?\d+\.\d{2}e?|unavailable)\s*[│┃]?\s*$/.test(row.tail))) return null
   const hasMarker = rows.some(row => row.marker === 'e')
-  if (lines.filter(line => line.trim() === LEGEND).length !== (hasMarker ? 1 : 0)) return false
+  if (lines.filter(line => line.trim() === LEGEND).length !== (hasMarker ? 1 : 0)) return null
+  return rows
+}
+
+export function modelStatsRowsMatch(text, expected) {
+  const rows = validModelStatsRows(text)
+  if (!rows) return false
   if (rows.length !== expected.size) return false
   return rows.every(row => {
     if (!expected.has(row.name)) return false
     const value = expected.get(row.name)
     return typeof value === 'number' ? row.amount === value : row.value === value
   }) && [...expected.keys()].every(name => rows.filter(row => row.name === name).length === 1)
+}
+
+export function modelStatsRowsHaveCosts(text, expectedCosts) {
+  const rows = validModelStatsRows(text)
+  if (!rows || rows.length !== expectedCosts.size) return false
+  return rows.every(row => expectedCosts.has(row.value)) &&
+    [...expectedCosts].every(cost => rows.filter(row => row.value === cost).length === 1)
 }
 
 export function modelStatsHistoryState(text, state) {
