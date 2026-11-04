@@ -106,6 +106,25 @@ export function makeSidebarFixture(name) {
         { providerID: 'async-provider-one', id: 'async-model-id', name: 'Async Catalogue Name' },
       ]
       break
+    case 'sorted costs':
+      fixture.sessions = [session('root')]
+      fixture.messages = { root: [
+        msg('sort-low', 'agent-low', 0.011, { providerID: 'provider', id: 'model-low' }),
+        msg('sort-high-first', 'agent-high', 0.009, { providerID: 'provider', id: 'model-high' }),
+        msg('sort-high-repeat', 'agent-high', 0.010, { providerID: 'provider', id: 'model-high' }),
+        msg('sort-high-shared-model', 'agent-high-extra', 0.0001, { providerID: 'provider', id: 'model-high' }),
+        msg('sort-agent-tie-z', 'tie-agent-z', 4, { providerID: 'provider', id: 'tie-model-z' }),
+        msg('sort-agent-tie-a', 'tie-agent-a', 4, { providerID: 'provider', id: 'tie-model-a' }),
+        msg('sort-partial-known', 'partial-agent', 3.14, { providerID: 'provider', id: 'partial-model' }),
+        msg('sort-partial-missing', 'partial-agent', null, { providerID: 'provider', id: 'partial-model' }),
+        msg('sort-partial-tie-complete', 'complete-tie-agent', 3.14, { providerID: 'provider', id: 'complete-tie-model' }),
+        msg('sort-unknown-only', 'unknown-agent', null, { providerID: 'provider', id: 'unknown-model' }),
+        msg('sort-known-zero', 'known-zero-agent', 0, { providerID: 'provider', id: 'known-zero-model' }),
+        msg('sort-negative-known', 'negative-agent', -1, { providerID: 'provider', id: 'negative-model' }),
+        msg('sort-named-unattributed-tie', 'named-agent-tie', 2.75, { providerID: 'provider', id: 'named-model-tie' }),
+        msg('sort-unattributed', null, 2.75, null),
+      ] }
+      break
     case 'model incomplete':
       fixture.sessions = [session('root')]
       fixture.messages = { root: [

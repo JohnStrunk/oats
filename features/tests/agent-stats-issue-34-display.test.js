@@ -52,11 +52,11 @@ test('mixed complete, incomplete, unknown, bounded and unattributed rows align',
   const rows = costRows(lines)
 
   assert.deepEqual(rows.map(expectedRow), [
-    { label: 'alpha', value: '$0.00', marker: 'blank' },
-    { label: 'beta', value: '$1.20', marker: 'e' },
-    { label: 'gamma', value: 'unavailable', marker: 'blank' },
-    { label: 'delta', value: '<-$9999.99', marker: 'blank' },
     { label: 'Unattributed', value: '$3.00', marker: 'e' },
+    { label: 'beta', value: '$1.20', marker: 'e' },
+    { label: 'alpha', value: '$0.00', marker: 'blank' },
+    { label: 'delta', value: '<-$9999.99', marker: 'blank' },
+    { label: 'gamma', value: 'unavailable', marker: 'blank' },
   ])
   assert.ok(rows.every((row) => row.labelAt === 0), 'labels must start at the left edge')
   assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
@@ -140,9 +140,9 @@ test('wide names stay complete when they fit and other names use their own row w
 
   assert.deepEqual(rows.map(expectedRow), [
     { label: '代理代理代理代理代理', value: '$3.00', marker: 'blank' },
-    { label: `a${'\u{1B000}'.repeat(7)}…`, value: 'unavailable', marker: 'blank' },
     { label: '😀'.repeat(10), value: '$1.00', marker: 'e' },
     { label: 'plain', value: '$0.00', marker: 'blank' },
+    { label: `a${'\u{1B000}'.repeat(7)}…`, value: 'unavailable', marker: 'blank' },
   ])
   assert.ok(rows.every((row) => row.labelAt === 0))
   assert.ok(rowsShareValueEnd(rows), rows.map((row) => row.valueEnd).join(', '))
