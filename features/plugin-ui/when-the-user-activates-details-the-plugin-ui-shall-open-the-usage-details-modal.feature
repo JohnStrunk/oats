@@ -6,7 +6,7 @@ Feature: When the user activates details, the plugin UI shall open the usage det
     When the Agent stats session is displayed
     And the user clicks the usage details link
     Then the usage details modal shall be visible
-    When the user dismisses the usage details modal
+    When the user presses Escape while the usage details modal is open
     Then the Agent stats section shall remain expanded
 
   Scenario: Clicking details while collapsed does not expand the sidebar
@@ -15,5 +15,5 @@ Feature: When the user activates details, the plugin UI shall open the usage det
     And the user toggles Agent stats using mouse
     And the user clicks the usage details link
     Then the usage details modal shall be visible
-    When the user dismisses the usage details modal
+    When the user presses Escape while the usage details modal is open
     Then the Agent stats section shall remain collapsed

@@ -189,9 +189,11 @@ Unknown totals display as `unavailable`, without an `e` marker.
 
 ### Usage details
 
-Click **(details)** in **Agent stats (details)** to open the usage modal without
-collapsing or expanding the sidebar section. Use the host's standard modal
-scrolling and dismissal controls to browse and close it.
+Click **(details)** in **Agent stats (details)** to open the details modal
+without collapsing or expanding the sidebar section. Use the host's standard
+modal scrolling controls to browse the tables. The details modal has a visible
+border and is titled **Agent cost details**. Click the on-screen `esc` control,
+press the **Escape** key, or click outside the modal to dismiss it.
 
 The modal groups available usage by recorded agent and model, sorted by agent,
 then model. Models from different providers remain separate, and work without

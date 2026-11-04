@@ -9,8 +9,8 @@ import {
   connectSupervisor, cleanupSupervisor, createOutputCapture, deferred, withTimeout,
 } from './tui_smoke_helper.js'
 
-const COLS = 160
-const ROWS = 40
+export const COLS = 160
+export const ROWS = 40
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 // A bounded screen model, not a search through historical output. OpenTUI uses

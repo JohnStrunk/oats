@@ -32,6 +32,15 @@ function getModels(context) {
 
 let activeScroll = null
 
+const MODAL_TITLE = 'Agent cost details'
+const MODAL_CLOSE_LABEL = 'esc'
+
+// The host backdrop skips its mouse-up dismissal while text is selected, so
+// ending a drag-selection keeps the highlight instead of closing the modal.
+function hasSelectedText(context) {
+  return Boolean(context?.renderer?.getSelection?.()?.getSelectedText?.())
+}
+
 export function openUsageDetailsModal(context, sessionData, input) {
   if (!context?.ui?.dialog) return
 
@@ -78,6 +87,10 @@ export function openUsageDetailsModal(context, sessionData, input) {
     ],
   }))
 
+  // The host backdrop skips its mouse-up dismissal while a text selection is
+  // active, so the selection left by activating the details link would swallow
+  // the first outside click. Opening the modal starts a fresh interaction.
+  context.renderer?.clearSelection?.()
   updateClientModels(context)
   context.ui.dialog.show(() => {
     return createUsageDetailsModalView(context, sessionData, input)
@@ -97,9 +110,49 @@ export function createUsageDetailsModalView(context, sessionData, input) {
   onCleanup(unsubscribe)
 
   const outer = createElement('box')
+  setProp(outer, 'width', '100%')
   setProp(outer, 'height', 30)
   setProp(outer, 'maxHeight', 30)
   setProp(outer, 'maxWidth', '100%')
+  setProp(outer, 'flexDirection', 'column')
+  // Fill the host dialog's panel width so the bordered surface spans every
+  // panel cell; the wrapper handles the host's reserved row above it.
+  setProp(outer, 'border', true)
+  setProp(outer, 'borderStyle', 'single')
+  setProp(outer, 'borderColor', context.theme?.text?.muted ?? context.theme?.text?.base)
+
+  const header = createElement('box')
+  setProp(header, 'flexDirection', 'row')
+  setProp(header, 'justifyContent', 'space-between')
+  setProp(header, 'width', '100%')
+  setProp(header, 'flexShrink', 0)
+  // Leave one cell before the right border so the esc label is not flush with
+  // it, and is still a distinct clickable target.
+  setProp(header, 'paddingRight', 1)
+
+  const title = createElement('text')
+  setProp(title, 'fg', context.theme?.text?.base)
+  insert(title, MODAL_TITLE)
+  insert(header, title)
+
+  // Clearing the dialog runs the registered onClose cleanup, which also
+  // releases the modal keymap layer. The esc label and the outside target
+  // share this dismissal path.
+  const dismissDialog = (event) => {
+    context.ui?.dialog?.clear?.()
+    event?.stopPropagation?.()
+  }
+
+  const closeButton = createElement('text')
+  setProp(closeButton, 'fg', context.theme?.text?.muted ?? context.theme?.text?.base)
+  setProp(closeButton, 'onMouseUp', (event) => {
+    // The host's own close label dismisses on a plain left click regardless
+    // of any selection.
+    if (event.button === 0) dismissDialog(event)
+  })
+  insert(closeButton, MODAL_CLOSE_LABEL)
+  insert(header, closeButton)
+  insert(outer, header)
 
   // The scrollbox lays out its viewport and vertical scrollbar side by side, so
   // the box must hug the content for the scrollbar to sit beside the table
@@ -124,11 +177,26 @@ export function createUsageDetailsModalView(context, sessionData, input) {
       .split('\n')
       .reduce((max, line) => Math.max(max, measureEditText(line, { widthMethod })), 1) + 1
   }
-  // setProp applies a plain value immediately and does not subscribe to
-  // signals. Set the initial width synchronously so the first frame is laid
-  // out correctly, then update it from an effect as usage records change.
-  setProp(outer, 'width', contentWidth())
-  createEffect(() => setProp(outer, 'width', contentWidth()))
+  // The body hugs the content so the scrollbox scrollbar stays beside the
+  // table, while the bordered panel fills the host dialog width.
+  const body = createElement('box')
+  setProp(body, 'flexDirection', 'column')
+  setProp(body, 'flexGrow', 1)
+  setProp(body, 'alignSelf', 'flex-start')
+  // Keep a long usage row inside the bordered panel in a narrower terminal.
+  setProp(body, 'maxWidth', '100%')
+  // Assigning a numeric width resets flex shrink, so restore the vertical
+  // constraint after each width update. setProp applies a plain value
+  // immediately and does not subscribe to signals: set the initial width
+  // synchronously for the first frame, then update it from an effect as usage
+  // records change.
+  const fitBody = () => {
+    setProp(body, 'width', contentWidth())
+    setProp(body, 'flexShrink', 1)
+    setProp(body, 'minHeight', 0)
+  }
+  fitBody()
+  createEffect(fitBody)
 
   const scroll = createElement('scrollbox')
   setProp(scroll, 'flexGrow', 1)
@@ -139,6 +207,31 @@ export function createUsageDetailsModalView(context, sessionData, input) {
   setProp(textNode, 'fg', context.theme?.text?.base)
   insert(textNode, detailsText)
   insert(scroll, textNode)
-  insert(outer, scroll)
-  return outer
+  insert(body, scroll)
+  insert(outer, body)
+
+  // The host dialog panel reserves one row above its content. Cover that row
+  // with an outside-click target so a click immediately above the bordered
+  // panel takes the same dismissal path as the host backdrop.
+  const outsideClick = createElement('box')
+  setProp(outsideClick, 'width', '100%')
+  setProp(outsideClick, 'height', 1)
+  setProp(outsideClick, 'flexShrink', 0)
+  setProp(outsideClick, 'onMouseUp', (event) => {
+    if (event.button !== 0) return
+    // Mirror the host backdrop: a mouse-up that ends a text drag-selection
+    // must keep the selection instead of closing the modal.
+    if (hasSelectedText(context)) return
+    dismissDialog(event)
+  })
+
+  const panel = createElement('box')
+  setProp(panel, 'width', '100%')
+  setProp(panel, 'flexDirection', 'column')
+  // Pull the wrapper into the host's reserved row without moving the bordered
+  // panel, so the scrollbox keeps its original viewport and scrollbar.
+  setProp(panel, 'marginTop', -1)
+  insert(panel, outsideClick)
+  insert(panel, outer)
+  return panel
 }
