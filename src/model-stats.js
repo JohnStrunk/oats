@@ -1,6 +1,9 @@
 import { createSignal, onCleanup } from 'solid-js'
 import { createElement, insert, setProp } from '@opentui/solid'
-import { aggregateReportedCostsByModelForDisplay } from './usage-aggregation.js'
+import {
+  aggregateReportedCostsByModelForDisplay,
+  orderReportedCostRows,
+} from './usage-aggregation.js'
 import {
   REPLACEMENT_CHARACTER,
   TRUNCATION_MARKER,
@@ -275,14 +278,15 @@ function modelStatsRows(snapshot, sessionID, models = []) {
   if (snapshot.sessionID !== sessionID) return [{ text: 'Loading session history…' }]
   const summary = aggregateReportedCostsByModelForDisplay(snapshot)
   const earliest = earliestUsageByModel(snapshot)
-  const content = summary.models.map((item) => {
+  const unattributed = summary.unattributed
+  const content = orderReportedCostRows(summary.models, unattributed).map((item) => {
+    if (item === unattributed) {
+      return displayRow({ model: UNATTRIBUTED_LABEL, ...unattributed }, true)
+    }
     const usage = earliest.get(item.model)
     const label = modelCatalogueName(models, item.model, usage?.providerID)
     return displayRow(item, false, label)
   })
-  if (summary.unattributed) {
-    content.push(displayRow({ model: 'Unattributed', ...summary.unattributed }, true))
-  }
   if (content.some((item) => item.marker === 'e')) {
     content.push({ text: INCOMPLETE_MARKER_LEGEND })
   }

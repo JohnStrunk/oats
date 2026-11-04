@@ -140,6 +140,17 @@ the exact decimal value used is its shortest round-trip decimal representation
 (the shortest decimal text that converts back to the same `Number`). This does
 not preserve the original JSON or provider decimal text and cannot recover
 precision already lost by the provider or host.
+
+**Agent stats** and **Model stats** order rows by descending exact reported-cost
+totals before display rounding. Known incomplete rows sort by their known total.
+Finite totals outside the `$9999.99` display bound still sort by exact value.
+The **Unattributed** row sorts by its own total.
+
+Rows with unknown totals, including sums that overflow the host `Number` range,
+appear last. Unknown named rows retain insertion order, defined as the order in
+which each named identity first appeared. Tied known named rows also retain
+insertion order. When totals tie, the **Unattributed** row follows named rows.
+
 Displayed totals are rounded up toward positive infinity to the next cent;
 amounts already at an exact cent remain unchanged. Any positive amount below
 one cent displays as `$0.01`. For example, `$1.231` displays as `$1.24`.

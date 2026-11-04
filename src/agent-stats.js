@@ -1,6 +1,10 @@
 import { createSignal, onCleanup } from 'solid-js'
 import { createElement, insert, setProp } from '@opentui/solid'
-import { aggregateReportedCostsForDisplay, formatReportedCost } from './usage-aggregation.js'
+import {
+  aggregateReportedCostsForDisplay,
+  formatReportedCost,
+  orderReportedCostRows,
+} from './usage-aggregation.js'
 import { openUsageDetailsModal } from './usage-details.js'
 import {
   REPLACEMENT_CHARACTER,
@@ -120,9 +124,9 @@ function displayLabels(rows, availableNameWidth) {
   return labels
 }
 
-const displayRow = (item, reserved = false) => ({
+const displayRow = (item, reserved = false, label = item.agent) => ({
   agent: item.agent,
-  clean: sanitizeName(item.agent),
+  clean: sanitizeName(label),
   amount: displayAmount(item),
   // Unavailable is already an explicit indication of an unknown total.
   marker: item.knownCost !== null && item.incomplete ? 'e' : ' ',
@@ -132,10 +136,11 @@ const displayRow = (item, reserved = false) => ({
 function agentStatsRows(snapshot, sessionID) {
   if (snapshot.sessionID !== sessionID) return [{ text: 'Loading session history…' }]
   const summary = aggregateReportedCostsForDisplay(snapshot)
-  const content = summary.agents.map((item) => displayRow(item))
-  if (summary.unattributed) {
-    content.push(displayRow({ agent: 'Unattributed', ...summary.unattributed }, true))
-  }
+  const unattributed = summary.unattributed
+  const content = orderReportedCostRows(summary.agents, unattributed).map((item) =>
+    item === unattributed
+      ? displayRow({ agent: 'Unattributed', ...unattributed }, true)
+      : displayRow(item))
   if (content.some((item) => item.marker === 'e')) {
     content.push({ text: INCOMPLETE_MARKER_LEGEND })
   }

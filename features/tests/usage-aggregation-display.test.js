@@ -5,6 +5,7 @@ import {
   aggregateReportedCosts,
   aggregateReportedCostsForDisplay,
   formatReportedCost,
+  orderReportedCostRows,
 } from '../../src/usage-aggregation.js'
 import { entryFor, record, snapshot } from './usage-aggregation-fixtures.js'
 
@@ -16,6 +17,10 @@ const display = (records, overrides) =>
 const displayed = (costs, agent = 'alpha') =>
   entryFor(display(costs.map((cost, index) => record(`${index}`, agent, cost))), agent)
     .roundedCost
+
+const orderedLabels = (result) =>
+  orderReportedCostRows(result.agents, result.unattributed)
+    .map((row) => row.agent ?? 'Unattributed')
 
 const withoutRounded = (summary) => ({
   ...summary,
@@ -223,6 +228,72 @@ test('rounds the unattributed bucket and handles its absence', () => {
 
   const absent = display([record('1', 'alpha', 2)])
   assert.equal(absent.unattributed, null)
+})
+
+test('orders display rows by exact total before rounding and preserves ties', () => {
+  const result = display([
+    record('lower', 'same-cent-lower', 0.011),
+    record('higher', 'same-cent-higher', 0.019),
+    record('split-a-1', 'split-a', 0.1),
+    record('split-a-2', 'split-a', 0.2),
+    record('split-b-1', 'split-b', 0.15),
+    record('split-b-2', 'split-b', 0.15),
+    record('min', 'min', Number.MIN_VALUE),
+    record('zero', 'zero', 0),
+    record('negative', 'negative', -1),
+    record('display-positive', 'display-positive', 10_000),
+    record('display-negative', 'display-negative', -10_000),
+    record('unknown', 'unknown', null),
+    record('overflow-1', 'numeric-overflow', Number.MAX_VALUE),
+    record('overflow-2', 'numeric-overflow', Number.MAX_VALUE),
+    record('unattributed-1', null, 0.1),
+    record('unattributed-2', null, 0.2),
+  ])
+
+  assert.equal(entryFor(result, 'same-cent-lower').roundedCost, '$0.02')
+  assert.equal(entryFor(result, 'same-cent-higher').roundedCost, '$0.02')
+  assert.equal(entryFor(result, 'split-a').roundedCost, '$0.30')
+  assert.equal(entryFor(result, 'split-b').roundedCost, '$0.30')
+  assert.equal(entryFor(result, 'min').roundedCost, '$0.01')
+  assert.equal(entryFor(result, 'zero').roundedCost, '$0.00')
+
+  assert.deepEqual(orderedLabels(result), [
+    'display-positive',
+    'split-a',
+    'split-b',
+    'Unattributed',
+    'same-cent-higher',
+    'same-cent-lower',
+    'min',
+    'zero',
+    'negative',
+    'display-negative',
+    'unknown',
+    'numeric-overflow',
+  ])
+})
+
+test('rejects rows that do not carry display comparison keys', () => {
+  const shown = display([
+    record('1', 'alpha', 2),
+    record('2', null, 1),
+  ])
+  const base = aggregateReportedCosts(snapshot([record('1', 'alpha', 2)]))
+  const [alpha] = shown.agents
+
+  assert.deepEqual(
+    orderReportedCostRows(shown.agents, shown.unattributed),
+    [alpha, shown.unattributed],
+  )
+  assert.throws(
+    () => orderReportedCostRows([{ ...alpha }]),
+    /requires rows returned by a display aggregation/,
+  )
+  assert.throws(() => orderReportedCostRows(base.agents), TypeError)
+  assert.throws(
+    () => orderReportedCostRows(shown.agents, { ...shown.unattributed }),
+    TypeError,
+  )
 })
 
 test('returns an empty display summary when no session is displayed', () => {

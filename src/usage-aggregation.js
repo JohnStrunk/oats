@@ -83,7 +83,7 @@ function aggregateByIdentity(snapshot, includeRounded, grouping) {
     }
   }
 
-  function summarize(group) {
+  function summarize(group, identityField, identity) {
     // Summing in a fixed magnitude order makes the result independent of
     // record order and avoids losing small contributions unnecessarily.
     group.costs.sort((a, b) => {
@@ -92,26 +92,29 @@ function aggregateByIdentity(snapshot, includeRounded, grouping) {
       if (magnitudeA !== magnitudeB) return magnitudeA < magnitudeB ? -1 : 1
       return a < b ? -1 : a > b ? 1 : 0
     })
+    const fields = identityField ? { [identityField]: identity } : {}
     let knownCost = group.costs.length ? 0 : null
     for (const cost of group.costs) {
       knownCost += cost
       if (!Number.isFinite(knownCost)) {
         // An overflowing total is not a usable known cost. Do not return
         // Infinity or silently present an arbitrary partial sum as the total.
-        return withRounded({ knownCost: null, incomplete: true }, group, includeRounded)
+        return withRounded(
+          { ...fields, knownCost: null, incomplete: true },
+          group,
+          includeRounded,
+        )
       }
     }
     return withRounded(
-      { knownCost, incomplete: group.incomplete },
+      { ...fields, knownCost, incomplete: group.incomplete },
       group,
       includeRounded,
     )
   }
 
-  const entries = Array.from(groups, ([identity, group]) => ({
-    [grouping.field]: identity,
-    ...summarize(group),
-  }))
+  const entries = Array.from(groups, ([identity, group]) =>
+    summarize(group, grouping.field, identity))
   const unattributedSummary = unattributed ? summarize(unattributed) : null
   return {
     sessionID: snapshot?.sessionID ?? null,
@@ -126,17 +129,83 @@ function aggregateByIdentity(snapshot, includeRounded, grouping) {
   }
 }
 
+// Keep each display row's exact-total comparison key beside it without adding
+// fields to the published summary shape. A symbol distinguishes a display row
+// whose total is unknown from a row that was never produced by a display
+// aggregation. Ordering must receive the same row objects returned by the
+// display aggregation; copying a row would drop this association.
+const UNKNOWN_EXACT_COST = Symbol('unknown exact reported cost')
+const exactCostKeyByRow = new WeakMap()
+
 function withRounded(summary, group, includeRounded) {
   if (!includeRounded) return summary
   const exact = summary.knownCost === null ? null : sumExactDecimals(group.costs)
   const roundedCost = exact === null ? null : formatExactCents(exact)
-  return {
+  const row = {
     ...summary,
     roundedCost,
     ...(exact !== null && roundedCost === null
       ? { overflowDirection: exact.units < 0n ? 'negative' : 'positive' }
       : {}),
   }
+  exactCostKeyByRow.set(
+    row,
+    exact === null ? UNKNOWN_EXACT_COST : exactComparisonKey(exact),
+  )
+  return row
+}
+
+// Finite JS numbers render as shortest decimals with exponents between
+// -324 (Number.MIN_VALUE) and 308 (for example, 1e308). Number.MAX_VALUE has
+// exponent 292 because its shortest decimal has 17 significant digits.
+// Scaling an exact total to this fixed decimal place yields an integer whose
+// BigInt order is the exact total's order, so comparisons need no
+// per-comparator exponent alignment. The required power is between 0 and 632;
+// computing it once per display row keeps sorting cheap.
+const EXACT_COST_KEY_EXPONENT = -324
+
+function exactComparisonKey({ units, exponent }) {
+  return units * 10n ** BigInt(exponent - EXACT_COST_KEY_EXPONENT)
+}
+
+function compareExactCostDescending(left, right) {
+  if (left === UNKNOWN_EXACT_COST) {
+    return right === UNKNOWN_EXACT_COST ? 0 : 1
+  }
+  if (right === UNKNOWN_EXACT_COST) return -1
+  return left < right ? 1 : left > right ? -1 : 0
+}
+
+/**
+ * Order display rows by exact reported total, descending.
+ *
+ * Accepts only row objects returned by aggregateReportedCostsForDisplay or
+ * aggregateReportedCostsByModelForDisplay, plus that summary's optional
+ * unattributed bucket. Rows from the non-display aggregation, spread copies,
+ * and any other object have no display comparison key and throw a TypeError.
+ *
+ * The unattributed bucket participates with its own total and follows an equal
+ * total from the rows, matching its position at the end of the display input.
+ * Unknown totals (unknown-only groups and numeric overflow) follow every known
+ * total, while a finite display-bound overflow still sorts by its exact total.
+ * Equal exact totals retain input order through the explicit original index.
+ */
+export function orderReportedCostRows(rows, unattributed = null) {
+  const ordered = unattributed ? [...rows, unattributed] : [...rows]
+  return ordered
+    .map((row, index) => ({ row, index, key: comparisonKeyFor(row) }))
+    .sort((left, right) =>
+      compareExactCostDescending(left.key, right.key) || left.index - right.index)
+    .map(({ row }) => row)
+}
+
+function comparisonKeyFor(row) {
+  if (!exactCostKeyByRow.has(row)) {
+    throw new TypeError(
+      'orderReportedCostRows requires rows returned by a display aggregation',
+    )
+  }
+  return exactCostKeyByRow.get(row)
 }
 
 // A finite JS number's toString is its shortest round-tripping decimal. Keep
@@ -155,8 +224,8 @@ function decimalParts(value) {
   }
 }
 
-// The exponent spread of finite doubles is small (about -324..292), so every
-// alignment power stays bounded even for Number.MIN_VALUE and Number.MAX_VALUE.
+// The shortest-decimal exponent spread of finite doubles is bounded by
+// -324..308, so every alignment power stays bounded even at either extreme.
 export function sumExactDecimals(costs) {
   let exponent = Infinity
   const parts = []
