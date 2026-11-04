@@ -7,7 +7,7 @@ const tokens = { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 }
 const message = (id, agent, cost) => ({ id, type: 'assistant', agent, cost, model, tokens, content: [], time: { created: 1, completed: 2 } })
 
 export function safetyFixture() {
-  return { route: root, sessions: [{ id: root }], messages: { [root]: [] }, failures: [], events: [], blockRoot: false }
+  return { route: root, sessions: [{ id: root }], messages: { [root]: [] }, models: [], failures: [], events: [], blockRoot: false }
 }
 
 // Observe the host's actual PTY output, including non-screen OSC effects. This

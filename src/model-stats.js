@@ -13,6 +13,11 @@ import {
 const INITIAL_NAME_WIDTH = 16
 const INCOMPLETE_MARKER_LEGEND = 'e = estimated'
 const UNATTRIBUTED_LABEL = 'Unattributed'
+const modelCatalogues = new WeakMap()
+const EMPTY_MODEL_CATALOGUE = {
+  models: [],
+  subscribe: () => () => {},
+}
 
 const nameWidth = (rowWidth, amountWidth) => Math.max(1, rowWidth - amountWidth - 3)
 // This key is only for visual collision checks; source IDs and rendered text
@@ -117,23 +122,164 @@ function displayLabels(rows, availableNameWidth) {
   return labels
 }
 
+function modelsFrom(value) {
+  if (Array.isArray(value)) return value
+  if (Array.isArray(value?.data)) return value.data
+  return null
+}
+
+function createModelCatalogue(context) {
+  let models = []
+  let attempted = false
+  const subscribers = new Set()
+
+  const publish = (next) => {
+    if (models === next) return
+    models = next
+    for (const subscriber of subscribers) {
+      try { subscriber() } catch { /* A view must not break catalogue loading. */ }
+    }
+  }
+
+  const fetchClientModels = () => {
+    let result
+    try {
+      const clientModel = context?.client?.model
+      const list = clientModel?.list
+      if (typeof list !== 'function') return
+      result = list.call(clientModel)
+    } catch {
+      return
+    }
+
+    const synchronous = modelsFrom(result)
+    if (synchronous) {
+      publish(synchronous)
+      return
+    }
+    Promise.resolve(result).then((value) => {
+      const fetched = modelsFrom(value)
+      if (fetched) publish(fetched)
+    }).catch(() => {})
+  }
+
+  const load = () => {
+    if (attempted) return
+    attempted = true
+
+    let result
+    try {
+      const locationModel = context?.data?.location?.model
+      const list = locationModel?.list
+      if (typeof list === 'function') result = list.call(locationModel)
+    } catch {
+      // Fall through to the client API when the local catalogue is unavailable.
+    }
+
+    const synchronous = modelsFrom(result)
+    if (synchronous) {
+      publish(synchronous)
+    } else if (result && typeof result.then === 'function') {
+      Promise.resolve(result).then((value) => {
+        const fetched = modelsFrom(value)
+        if (fetched) {
+          publish(fetched)
+        } else {
+          fetchClientModels()
+        }
+      }, () => {
+        fetchClientModels()
+      }).catch(() => {})
+    } else {
+      fetchClientModels()
+    }
+  }
+
+  return {
+    get models() { return models },
+    load,
+    subscribe(subscriber) {
+      subscribers.add(subscriber)
+      return () => subscribers.delete(subscriber)
+    },
+  }
+}
+
+function modelCatalogueFor(context) {
+  if (!context || (typeof context !== 'object' && typeof context !== 'function')) {
+    return EMPTY_MODEL_CATALOGUE
+  }
+  let catalogue = modelCatalogues.get(context)
+  if (!catalogue) {
+    catalogue = createModelCatalogue(context)
+    modelCatalogues.set(context, catalogue)
+  }
+  // Cache by host context so repeated sidebar renders share one catalogue read.
+  catalogue.load()
+  return catalogue
+}
+
+function usageTimestamp(record) {
+  for (const value of [
+    record?.startedAt,
+    record?.createdAt,
+    record?.terminalAt,
+    record?.completedAt,
+  ]) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+  }
+  return null
+}
+
+function earliestUsageByModel(snapshot) {
+  const earliest = new Map()
+  for (const record of snapshot?.records ?? []) {
+    const model = record?.model
+    if (typeof model?.id !== 'string' || model.id.trim().length === 0) continue
+    const timestamp = usageTimestamp(record)
+    const previous = earliest.get(model.id)
+    if (!previous || (
+      timestamp !== null &&
+      (previous.timestamp === null || timestamp < previous.timestamp)
+    )) {
+      earliest.set(model.id, { providerID: model.providerID, timestamp })
+    }
+  }
+  return earliest
+}
+
+function modelCatalogueName(models, modelID, providerID) {
+  if (typeof providerID !== 'string' || providerID.trim().length === 0) return modelID
+  const entry = models.find((model) =>
+    model?.id === modelID && model?.providerID === providerID,
+  )
+  return typeof entry?.name === 'string' && entry.name.trim().length > 0
+    ? entry.name
+    : modelID
+}
+
 const displayAmount = (item) => item.roundedCost ??
   (item.overflowDirection === 'negative' ? '<-$9999.99' :
     item.overflowDirection === 'positive' ? '>$9999.99' : 'unavailable')
 
-const displayRow = (item, reserved = false) => ({
+const displayRow = (item, reserved = false, label = item.model) => ({
   model: item.model,
-  clean: sanitizeName(item.model),
+  clean: sanitizeName(label),
   amount: displayAmount(item),
   // An unknown total already says unavailable; only a known partial gets `e`.
   marker: item.knownCost !== null && item.incomplete ? 'e' : ' ',
   reserved,
 })
 
-function modelStatsRows(snapshot, sessionID) {
+function modelStatsRows(snapshot, sessionID, models = []) {
   if (snapshot.sessionID !== sessionID) return [{ text: 'Loading session history…' }]
   const summary = aggregateReportedCostsByModelForDisplay(snapshot)
-  const content = summary.models.map((item) => displayRow(item))
+  const earliest = earliestUsageByModel(snapshot)
+  const content = summary.models.map((item) => {
+    const usage = earliest.get(item.model)
+    const label = modelCatalogueName(models, item.model, usage?.providerID)
+    return displayRow(item, false, label)
+  })
   if (summary.unattributed) {
     content.push(displayRow({ model: 'Unattributed', ...summary.unattributed }, true))
   }
@@ -157,6 +303,9 @@ export function createModelStatsView(context, sessionData, input, expanded, togg
   const [revision, setRevision] = createSignal(0, { equals: false })
   const unsubscribe = sessionData.subscribe(() => setRevision((value) => value + 1))
   onCleanup(unsubscribe)
+  const catalogue = modelCatalogueFor(context)
+  const unsubscribeCatalogue = catalogue.subscribe(() => setRevision((value) => value + 1))
+  onCleanup(unsubscribeCatalogue)
 
   const box = createElement('box')
   setProp(box, 'flexDirection', 'column')
@@ -207,7 +356,11 @@ export function createModelStatsView(context, sessionData, input, expanded, togg
     revision()
     rowRefs.length = 0
     if (!expanded()) return []
-    const rows = modelStatsRows(sessionData.getSnapshot(), input.sessionID).map((item) => {
+    const rows = modelStatsRows(
+      sessionData.getSnapshot(),
+      input.sessionID,
+      catalogue.models,
+    ).map((item) => {
       if (item.text) {
         const status = createElement('text')
         setProp(status, 'fg', color)

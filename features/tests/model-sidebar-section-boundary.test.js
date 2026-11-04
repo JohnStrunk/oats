@@ -5,6 +5,7 @@ import {
   modelStatsCollapsed,
   modelStatsHistoryState,
   modelStatsLegendCount,
+  modelStatsRowsHaveCosts,
   modelStatsRowsMatch,
   modelStatsSectionHasRow,
   modelSummaryNoticeAbsent,
@@ -34,6 +35,28 @@ test('Model stats rows are isolated from Agent stats and unrelated sidebar conte
   ])), true)
   assert.equal(modelStatsLegendCount(text), 1)
   assert.equal(modelStatsRowsMatch(text, new Map([['shared-model', '$3.00']])), false)
+})
+
+test('Model stats rows have the expected distinct costs and row count', () => {
+  const valid = screen('model-a: $1.00', 'model-b: $2.00')
+  assert.equal(modelStatsRowsHaveCosts(valid, new Set(['$1.00', '$2.00'])), true)
+  assert.equal(modelStatsRowsHaveCosts(valid, new Set(['$1.00'])), false)
+
+  const duplicateCost = screen('model-a: $1.00', 'model-b: $1.00')
+  assert.equal(modelStatsRowsHaveCosts(duplicateCost, new Set(['$1.00', '$2.00'])), false)
+})
+
+test('Model stats cost rows reject invalid and collapsed sections', () => {
+  const invalid = screen('model-a: $1.00', 'not a model row')
+  assert.equal(modelStatsRowsHaveCosts(invalid, new Set(['$1.00'])), false)
+
+  const collapsed = [
+    '                 ▼ Agent stats',
+    '                 alpha: $1.00',
+    '                 ▶ Model stats',
+    '                 model-a: $1.00',
+  ].join('\n')
+  assert.equal(modelStatsRowsHaveCosts(collapsed, new Set(['$1.00'])), false)
 })
 
 test('collapsed or absent Model stats cannot match visible rows in another section', () => {

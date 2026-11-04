@@ -72,7 +72,7 @@ export default {
         if (key === 'location' && control.models) return new Proxy(target.location, {
           get(location, name) {
             if (name === 'model') return {
-              list: () => structuredClone(control.models),
+              list: () => control.modelCatalogueSource === 'client' ? undefined : structuredClone(control.models),
               sync: async () => {}, invalidate: () => {},
             }
             return Reflect.get(location, name, location)
@@ -130,7 +130,8 @@ export default {
         if (key === 'session') return session
         if (key === 'message') return message
         if (key === 'model' && control.models) return {
-          list: async () => ({ location: { directory: '.' }, data: structuredClone(control.models) }),
+          // Match the pinned client API's Promise<{ location, data: ModelInfo[] }> response.
+          list: () => Promise.resolve({ location: { directory: '.' }, data: structuredClone(control.models) }),
         }
         return Reflect.get(target, key, target)
       },
