@@ -58,7 +58,7 @@ jobs:
       - name: Run automated test suite
         env:
           OATS_OPENCODE: ${{ github.workspace }}/.github/tooling/opencode-host/node_modules/.bin/opencode
-        run: npm run test:features
+        run: npm run test:features -- --parallel 2
 
   lint-markdown:
     name: Lint Markdown Documentation

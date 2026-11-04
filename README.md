@@ -454,6 +454,11 @@ Run all feature scenarios, including the host smoke tests:
 npm run test:features
 ```
 
+CI runs the complete feature suite with two Cucumber workers:
+`npm run test:features -- --parallel 2`. The local command above remains serial
+by default. Scenarios and assertions are unchanged, and each scenario uses its
+own temporary resources.
+
 Run unit tests and all feature scenarios together:
 
 ```bash
@@ -464,6 +469,27 @@ The full suite requires both the smoke-test host prerequisites and the
 [CI verification setup](#local-ci-verification).
 Pass Cucumber options with `npm run test:features -- ...`, not `npm test`;
 tag expressions include the `@` prefix.
+
+### On-demand feature-suite profile
+
+From the repository root, run the opt-in profiler:
+
+```bash
+node scripts/profile-features.js
+```
+
+The report includes per-scenario elapsed time, component totals, each scenario's
+combined Gherkin-step time and scenario-hook time, full-suite elapsed time, and
+residual setup/framework overhead. Runtime context covers Cucumber.js, Node.js,
+OS release, CPU architecture, and detected CI metadata. `BeforeStep` and
+`AfterStep` hook time is included in the Gherkin-step time; scenario hooks are
+reported separately. The runner image/label is not reported; read it from the
+CI job logs.
+
+The profiler is opt-in and leaves the normal `npm run test:features` command and
+routine CI unchanged. The full-suite prerequisites stated above still apply,
+including the real-host smoke-test requirements and
+[CI verification setup](#local-ci-verification).
 
 ### Runner-contract disk limits
 

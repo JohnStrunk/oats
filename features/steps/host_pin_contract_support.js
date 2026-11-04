@@ -10,9 +10,36 @@ const versionsWithComponent = value => [`${value}.0.0`, `2.${value}.0`, `2.0.${v
 export const maxSafeHostPins = versionsWithComponent(maxSafe)
 export const overlargeHostPins = versionsWithComponent(maxSafe + 1n)
 
-// Exercise the checked-out CLI with only the dependency declaration changed.
-// No source files or assertions are replaced in the disposable copy.
-export function withPinnedCheckout(version, action) {
+const HOST_MANIFEST = '.github/tooling/opencode-host/package.json'
+
+// Rewrite only the dependency declaration, always starting from the original
+// pinned manifest so an earlier case cannot contaminate the next. An undefined
+// version drops the declaration when the manifest is serialized.
+function writePinnedManifest(checkout, origin, version) {
+  const pkg = JSON.parse(origin)
+  pkg.dependencies['@opencode/cli'] = version
+  writeFileSync(join(checkout, HOST_MANIFEST), JSON.stringify(pkg, null, 2) + '\n')
+}
+
+const isThenable = value => typeof value?.then === 'function'
+
+// The batch is synchronous by contract: `action` and every `run(version, task)`
+// must return a plain value, never a promise. The private copy is removed as
+// soon as `action` returns, so an async callback would outlive its checkout.
+function assertSynchronous(result, what) {
+  if (isThenable(result)) {
+    throw new TypeError(`${what} must be synchronous: withPinnedCheckoutBatch removes its checkout on return`)
+  }
+  return result
+}
+
+// Exercise the checked-out CLI in one private disposable copy per scenario.
+// No source files or assertions are replaced in the copy; `run(version, task)`
+// rewrites the pin declaration before each sequential case and hands the task
+// (checkout, caseTemp), where caseTemp is a fresh 0700 directory under the
+// batch temp root so host stubs and markers never leak between cases. The
+// batch is synchronous: tasks must not return promises (see assertSynchronous).
+export function withPinnedCheckoutBatch(action) {
   const root = getRepoRoot()
   const temp = mkdtempSync(join(existsSync('/tmp/opencode') ? '/tmp/opencode' : tmpdir(), 'oats-version-contract-'))
   const checkout = join(temp, 'checkout')
@@ -22,14 +49,21 @@ export function withPinnedCheckout(version, action) {
       filter: source => !source.split('/').some(part => ['.git', 'node_modules', '.ci-linters'].includes(part)),
     })
     symlinkSync(join(root, 'node_modules'), join(checkout, 'node_modules'), 'dir')
-    const manifest = join(checkout, '.github/tooling/opencode-host/package.json')
-    const pkg = JSON.parse(readFileSync(manifest, 'utf8'))
-    pkg.dependencies['@opencode/cli'] = version
-    writeFileSync(manifest, JSON.stringify(pkg, null, 2) + '\n')
-    return action(checkout, temp)
+    const origin = readFileSync(join(root, HOST_MANIFEST), 'utf8')
+    const result = action((version, task) => {
+      writePinnedManifest(checkout, origin, version)
+      return assertSynchronous(task(checkout, mkdtempSync(join(temp, 'case-'))), 'withPinnedCheckoutBatch task')
+    })
+    return assertSynchronous(result, 'withPinnedCheckoutBatch action')
   } finally {
     rmSync(temp, { recursive: true, force: true })
   }
+}
+
+// Single-case wrapper: exercise the checked-out CLI with only the dependency
+// declaration changed.
+export function withPinnedCheckout(version, action) {
+  return withPinnedCheckoutBatch(run => run(version, action))
 }
 
 export function runCommand(cwd, command, args, env = {}) {
