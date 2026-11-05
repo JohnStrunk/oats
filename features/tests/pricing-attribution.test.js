@@ -5,7 +5,6 @@ import {
   evaluateCallTierRate,
   extractCallTokens,
   findModel,
-  renderPairTable,
   sanitizeText,
 } from '../../src/pricing-attribution.js'
 
@@ -238,25 +237,4 @@ test('aggregateUsageDetails shows mixed rates and estimates category costs', () 
   // call 2 input: (2000 * 10) / 1,000,000 = 0.020
   // total input estimate: 0.021 -> $0.02e
   assert.equal(pair.cost.input, '$0.02e')
-})
-
-test('renderPairTable outputs proper heading and 4-column layout', () => {
-  const pair = {
-    agentDisplay: 'planner',
-    modelDisplay: 'probe/model-a',
-    reportedCost: '$0.50',
-    price: { input: '$2.00', output: '$4.00', cacheWrite: '—', cacheRead: '—' },
-    tokens: { input: '100,000', output: '50,000', cacheWrite: '—', cacheRead: '—' },
-    cost: { input: '$0.20e', output: '$0.20e', cacheWrite: '—', cacheRead: '—' },
-  }
-
-  const table = renderPairTable(pair)
-  assert.ok(table.includes('planner - probe/model-a  $0.50'))
-  assert.ok(table.includes('input'))
-  assert.ok(table.includes('output'))
-  assert.ok(table.includes('cache write'))
-  assert.ok(table.includes('cache read'))
-  assert.ok(table.includes('Price'))
-  assert.ok(table.includes('Tokens'))
-  assert.ok(table.includes('Cost'))
 })

@@ -4,7 +4,7 @@ export const message = (id, agent, chosenModel = model, cost = 1, tokens = usage
   id, type: 'assistant', agent, model: chosenModel, cost, tokens,
   time: { created: 1, completed: 2 }, content: [],
 })
-const modelInfo = (providerID = 'fixture-provider', id = 'fixture-model') => ({
+export const modelInfo = (providerID = 'fixture-provider', id = 'fixture-model') => ({
   providerID, id, modelID: id, name: id, status: 'active', enabled: true,
   cost: [{ input: 5, output: 2, cache: { write: 6, read: 7 } }],
   variants: [], time: { released: 0 }, capabilities: { tools: true, input: ['text'], output: ['text'] },
@@ -59,6 +59,9 @@ export function detailsFixture(kind) {
     fixture.messages[root] = [message('known', 'alpha', model, 2, null), message('missing', 'alpha', model, null, null)]
     fixture.messages[child] = []
     fixture.models = []
+  } else if (kind === 'partial reported cost') {
+    fixture.messages[root] = [message('reported-known', 'alpha', model, 1), message('reported-missing', 'alpha', model, null)]
+    fixture.messages[child] = []
   } else if (kind === 'partial tokens') {
     fixture.messages[root] = [message('known', 'alpha'), message('missing', 'alpha', model, 2, null)]
     fixture.messages[child] = []
@@ -79,6 +82,24 @@ export function detailsFixture(kind) {
       ...Array.from({ length: 24 }, (_, i) => message(`s${i}`, scrollAgent(i + 1))),
     ]
     fixture.messages[child] = []
+  } else if (kind === 'long identity') {
+    const agent = `overflow-agent-${'agent-'.repeat(20)}`
+    const chosenModel = {
+      providerID: 'overflow-provider',
+      id: `overflow-model-${'model-'.repeat(20)}`,
+    }
+    fixture.messages[root] = [message('long-identity', agent, chosenModel, 1)]
+    fixture.messages[child] = []
+    fixture.models = [modelInfo(chosenModel.providerID, chosenModel.id)]
+  } else if (kind === 'wide Unicode identity') {
+    const agent = `wide-agent-${'代界'.repeat(30)}`
+    const chosenModel = {
+      providerID: 'wide-provider',
+      id: `wide-model-${'模型'.repeat(30)}`,
+    }
+    fixture.messages[root] = [message('wide-unicode-identity', agent, chosenModel, 1)]
+    fixture.messages[child] = []
+    fixture.models = [modelInfo(chosenModel.providerID, chosenModel.id)]
   } else if (kind !== 'single pair' && kind !== 'switch') throw new Error(`Unknown fixture: ${kind}`)
   return fixture
 }

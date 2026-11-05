@@ -1,4 +1,4 @@
-@ears:state-driven @component:plugin-ui @interface:opencode-tui @details-issue-55
+@ears:state-driven @component:plugin-ui @interface:opencode-tui @details-issue-55 @details-issue-64
 Feature: While the usage details modal is open, the plugin UI shall show the title "Agent cost details" at the panel's upper-left corner
 
   Scenario: The exact title appears at the upper-left of the panel

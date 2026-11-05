@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { hasDetailsModal, lineWith, escapeRegExp, locateExactLabel, locateText, markedNumbers, panelFrame, pinnedUsagePanelFrame, rowNumbers } from '../steps/usage_details_screen.js'
+import { displayWidth } from '../real-host-tests/terminal_screen.js'
+import { hasDetailsModal, lineWith, escapeRegExp, locateExactLabel, locateText, markedNumbers, panelFrame, pinnedUsagePanelFrame, rowNumbers, terminalCells } from '../steps/usage_details_screen.js'
 
 const INNER_WIDTH = 48
 const border = `┌${'─'.repeat(INNER_WIDTH)}┐`
 const bottom = `└${'─'.repeat(INNER_WIDTH)}┘`
-const row = content => `│${content.padEnd(INNER_WIDTH)}│`
+const row = content => `│${content}${' '.repeat(Math.max(0, INNER_WIDTH - displayWidth(content)))}│`
 
 const tableRows = [
   'Agent cost details                    esc',
@@ -27,6 +28,12 @@ test('panelFrame locates the bordered usage details table', () => {
     { top: frame.top, bottom: frame.bottom, left: frame.left, right: frame.right },
     { top: 1, bottom: 8, left: 0, right: INNER_WIDTH + 1 },
   )
+})
+
+test('panelFrame locates the bordered table when a body row contains a wide glyph', () => {
+  const rows = [...tableRows]
+  rows[1] = 'worker - 代-model  $1.00'
+  assert.ok(panelFrame(screenWithFrame(rows)))
 })
 
 test('panelFrame rejects a frame with a missing side', () => {
@@ -133,4 +140,8 @@ test('locateExactLabel returns coordinates at word and case boundaries', () => {
   assert.equal(locateExactLabel('esc_button', 'esc'), null)
   assert.deepEqual(locateExactLabel('[esc]', 'esc'), { row: 0, column: 1 })
   assert.deepEqual(locateExactLabel('value (esc) here', '(esc)'), { row: 0, column: 6 })
+})
+
+test('terminalCells measures wide Unicode headings in terminal columns', () => {
+  assert.deepEqual(terminalCells('Aé代B'), ['A', 'é', '代', '', 'B'])
 })

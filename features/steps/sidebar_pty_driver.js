@@ -13,32 +13,169 @@ export const COLS = 160
 export const ROWS = 40
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 
+// PTY output is untrusted for the purposes of this observer. Bound control
+// sequences and their parameter lists before allocating/splitting so a
+// malformed frame cannot turn screen parsing into a budget-free operation. The
+// pinned host emits far fewer parameters than these limits.
+const MAX_CSI_SEQUENCE_LENGTH = 256
+const MAX_CSI_PARAMETERS = 32
+const MAX_SGR_SEQUENCE_LENGTH = 256
+const MAX_SGR_PARAMETERS = 64
+const MAX_SGR_PARAMETER_LENGTH = 32
+const MAX_SGR_COLOR_PARTS = 8
+
+const emptyStyle = () => ({
+  bold: false,
+  dim: false,
+  italic: false,
+  underline: false,
+  inverse: false,
+  hidden: false,
+  strikethrough: false,
+  foreground: null,
+  background: null,
+})
+
+function cloneColor(color) {
+  return color === null ? null : {
+    mode: color.mode,
+    value: Array.isArray(color.value) ? [...color.value] : color.value,
+  }
+}
+
+function cloneStyle(style) {
+  return {
+    ...style,
+    foreground: cloneColor(style.foreground),
+    background: cloneColor(style.background),
+  }
+}
+
+function cloneStyleGrid(grid) {
+  return grid.map(line => line.slice())
+}
+
+function setSgrColor(style, key, mode, value) {
+  if ((mode === 2 && (!Array.isArray(value) || value.length !== 3 || value.some(channel => !Number.isInteger(channel) || channel < 0 || channel > 255))) ||
+      (mode === 5 && (!Number.isInteger(value) || value < 0 || value > 255))) return
+  style[key] = { mode: mode === 2 ? 'rgb' : 'indexed', value }
+}
+
+// Track common SGR text attributes for rendered cells. This parser is fed only
+// by the pinned-host PTY observer; it does not infer styles from a mock tree or
+// retain an unbounded history of raw terminal output.
+function applySgr(style, raw) {
+  style = cloneStyle(style)
+  if (raw.length > MAX_SGR_SEQUENCE_LENGTH) return style
+  const parameters = raw === '' ? ['0'] : raw.split(';')
+  if (parameters.length > MAX_SGR_PARAMETERS) return style
+  for (let index = 0; index < parameters.length; index++) {
+    const parameter = parameters[index]
+    if (parameter.length > MAX_SGR_PARAMETER_LENGTH) continue
+    const parts = parameter.split(':')
+    if (parts.length > MAX_SGR_COLOR_PARTS) continue
+    const code = Number(parts[0] || 0)
+    switch (code) {
+      case 0: Object.assign(style, emptyStyle()); break
+      case 1: style.bold = true; break
+      case 2: style.dim = true; break
+      case 3: style.italic = true; break
+      case 4: style.underline = true; break
+      case 7: style.inverse = true; break
+      case 8: style.hidden = true; break
+      case 9: style.strikethrough = true; break
+      case 22: style.bold = false; style.dim = false; break
+      case 23: style.italic = false; break
+      case 24: style.underline = false; break
+      case 27: style.inverse = false; break
+      case 28: style.hidden = false; break
+      case 29: style.strikethrough = false; break
+      case 39: style.foreground = null; break
+      case 49: style.background = null; break
+      case 38:
+      case 48: {
+        const key = code === 38 ? 'foreground' : 'background'
+        if (parts.length > 1) {
+          const mode = Number(parts[1])
+          if (mode === 5) setSgrColor(style, key, mode, Number(parts.at(-1)))
+          else if (mode === 2) setSgrColor(style, key, mode, parts.slice(-3).map(Number))
+        } else {
+          const mode = Number(parameters[index + 1])
+          if (mode === 5 && index + 2 < parameters.length) {
+            setSgrColor(style, key, mode, Number(parameters[index + 2]))
+            index += 2
+          } else if (mode === 2 && index + 4 < parameters.length) {
+            setSgrColor(style, key, mode, parameters.slice(index + 2, index + 5).map(Number))
+            index += 4
+          }
+        }
+        break
+      }
+      default:
+        if (code >= 30 && code <= 37) style.foreground = { mode: 'ansi', value: code - 30 }
+        else if (code >= 90 && code <= 97) style.foreground = { mode: 'ansi-bright', value: code - 90 }
+        else if (code >= 40 && code <= 47) style.background = { mode: 'ansi', value: code - 40 }
+        else if (code >= 100 && code <= 107) style.background = { mode: 'ansi-bright', value: code - 100 }
+    }
+  }
+  return style
+}
+
 // A bounded screen model, not a search through historical output. OpenTUI uses
 // cursor addressing and overwrites previous frames. Keep escape sequences across
-// PTY chunks and ignore formatting while implementing screen-changing controls.
+// PTY chunks, model common SGR attributes on rendered cells, and implement the
+// screen-changing controls needed by the real-host acceptance observer.
 export function terminalScreen(cols, rows) {
   const blank = () => Array(cols).fill(' ')
+  let currentStyle = emptyStyle()
+  const blankStyleLine = () => Array(cols).fill(currentStyle)
+  const defaultStyleLine = () => Array(cols).fill(emptyStyle())
+  const blankStyles = () => Array.from({ length: rows }, defaultStyleLine)
   let cells = Array.from({ length: rows }, blank)
+  let styles = blankStyles()
   let x = 0, y = 0, saved = [0, 0], pending = '', wrap = false
   let primary = null
   let scrollTop = 0, scrollBottom = rows - 1
-  let frameDepth = 0, frameSize = 0, completedScreen = null, failure = null
+  let frameDepth = 0, frameSize = 0, completedScreen = null, completedStyles = null, failure = null
   const render = () => cells.map(line => line.join('').replace(/ +$/, '')).join('\n')
   const checkFrameSize = size => {
     if (size > MAX_OUTPUT) throw new Error('Synchronized terminal frame exceeded the output limit')
   }
   const clamp = (v, max) => Math.max(0, Math.min(max, v))
-  const scroll = () => { cells.splice(scrollTop, 1); cells.splice(scrollBottom, 0, blank()) }
+  const scroll = () => {
+    cells.splice(scrollTop, 1)
+    cells.splice(scrollBottom, 0, blank())
+    styles.splice(scrollTop, 1)
+    styles.splice(scrollBottom, 0, blankStyleLine())
+  }
   const lineFeed = () => { if (y === scrollBottom) scroll(); else y = clamp(y + 1, rows - 1) }
-  const eraseLine = (a, b) => { for (let i = a; i <= b; i++) cells[y][i] = ' ' }
+  const eraseLine = (a, b) => {
+    for (let i = a; i <= b; i++) {
+      cells[y][i] = ' '
+      styles[y][i] = currentStyle
+    }
+  }
   function csi(raw, final) {
+    if (raw.length > MAX_CSI_SEQUENCE_LENGTH) return
     const privateMode = /^[?>!]/.test(raw)
-    const nums = raw.replace(/^[?>!]/, '').split(';').map(v => Number.parseInt(v, 10) || 0)
+    const parameterText = raw.replace(/^[?>!]/, '')
+    if (parameterText.length > MAX_CSI_SEQUENCE_LENGTH) return
+    const parameterParts = parameterText.split(';')
+    if (parameterParts.length > MAX_CSI_PARAMETERS) return
+    const nums = parameterParts.map(v => Number.parseInt(v, 10) || 0)
     const n = nums[0] || 1
+    if (!privateMode && final === 'm') { currentStyle = applySgr(currentStyle, raw); return }
     if (privateMode) {
       if ((final === 'h' || final === 'l') && nums.includes(1049)) {
-        if (final === 'h' && primary === null) { primary = { cells, x, y }; cells = Array.from({ length: rows }, blank); x = y = 0 }
-        else if (final === 'l' && primary !== null) { ({ cells, x, y } = primary); primary = null }
+        if (final === 'h' && primary === null) {
+          primary = { cells, styles, x, y }
+          cells = Array.from({ length: rows }, blank)
+          styles = blankStyles()
+          x = y = 0
+        } else if (final === 'l' && primary !== null) {
+          ({ cells, styles, x, y } = primary)
+          primary = null
+        }
       }
       return
     }
@@ -53,16 +190,35 @@ export function terminalScreen(cols, rows) {
       case 'G': case '`': x = clamp(n - 1, cols - 1); break
       case 'd': y = clamp(n - 1, rows - 1); break
       case 'J':
-        if (nums[0] === 2 || nums[0] === 3) cells = Array.from({ length: rows }, blank)
-        else if (nums[0] === 1) { for (let r = 0; r < y; r++) cells[r] = blank(); eraseLine(0, x) }
-        else { eraseLine(x, cols - 1); for (let r = y + 1; r < rows; r++) cells[r] = blank() }
+        if (nums[0] === 2 || nums[0] === 3) {
+          cells = Array.from({ length: rows }, blank)
+          styles = Array.from({ length: rows }, blankStyleLine)
+        } else if (nums[0] === 1) {
+          for (let r = 0; r < y; r++) { cells[r] = blank(); styles[r] = blankStyleLine() }
+          eraseLine(0, x)
+        } else {
+          eraseLine(x, cols - 1)
+          for (let r = y + 1; r < rows; r++) { cells[r] = blank(); styles[r] = blankStyleLine() }
+        }
         break
       case 'K': if (nums[0] === 2) eraseLine(0, cols - 1); else if (nums[0] === 1) eraseLine(0, x); else eraseLine(x, cols - 1); break
       case 'X': eraseLine(x, Math.min(cols - 1, x + n - 1)); break
-      case '@': cells[y].splice(x, 0, ...Array(Math.min(n, cols)).fill(' ')); cells[y].length = cols; break
-      case 'P': cells[y].splice(x, n); while (cells[y].length < cols) cells[y].push(' '); break
-      case 'L': if (y >= scrollTop && y <= scrollBottom) { for (let i = 0; i < Math.min(n, scrollBottom - y + 1); i++) { cells.splice(scrollBottom, 1); cells.splice(y, 0, blank()) } } break
-      case 'M': if (y >= scrollTop && y <= scrollBottom) { for (let i = 0; i < Math.min(n, scrollBottom - y + 1); i++) { cells.splice(y, 1); cells.splice(scrollBottom, 0, blank()) } } break
+      case '@': {
+        const count = Math.min(n, cols)
+        cells[y].splice(x, 0, ...Array(count).fill(' '))
+        styles[y].splice(x, 0, ...Array(count).fill(currentStyle))
+        cells[y].length = cols
+        styles[y].length = cols
+        break
+      }
+      case 'P':
+        cells[y].splice(x, n)
+        styles[y].splice(x, n)
+        while (cells[y].length < cols) cells[y].push(' ')
+        while (styles[y].length < cols) styles[y].push(currentStyle)
+        break
+      case 'L': if (y >= scrollTop && y <= scrollBottom) { for (let i = 0; i < Math.min(n, scrollBottom - y + 1); i++) { cells.splice(scrollBottom, 1); cells.splice(y, 0, blank()); styles.splice(scrollBottom, 1); styles.splice(y, 0, blankStyleLine()) } } break
+      case 'M': if (y >= scrollTop && y <= scrollBottom) { for (let i = 0; i < Math.min(n, scrollBottom - y + 1); i++) { cells.splice(y, 1); cells.splice(scrollBottom, 0, blank()); styles.splice(y, 1); styles.splice(scrollBottom, 0, blankStyleLine()) } } break
       case 'S': for (let i = 0; i < Math.min(n, rows); i++) scroll(); break
       case 'r': scrollTop = clamp((nums[0] || 1) - 1, rows - 1); scrollBottom = clamp((nums[1] || rows) - 1, rows - 1); if (scrollTop >= scrollBottom) { scrollTop = 0; scrollBottom = rows - 1 } x = y = 0; break
       case 's': saved = [x, y]; break
@@ -86,17 +242,26 @@ export function terminalScreen(cols, rows) {
           let j = i + 2
           while (j < pending.length && !(pending.charCodeAt(j) >= 0x40 && pending.charCodeAt(j) <= 0x7e)) j++
           if (j === pending.length) break
+          // Drop overlong control sequences without slicing/splitting them.
+          // They cannot be synchronized-output markers and the pinned host
+          // never emits parameter lists this large.
+          if (j - (i + 2) > MAX_CSI_SEQUENCE_LENGTH) { i = j + 1; continue }
           const raw = pending.slice(i + 2, j), final = pending[j]
           const sync = raw.startsWith('?') && raw.slice(1).split(';').includes('2026') && (final === 'h' || final === 'l')
           if (sync && final === 'h') {
-            if (!frameDepth) { completedScreen = render(); frameSize = 0; frameStart = i }
+            if (!frameDepth) {
+              completedScreen = render()
+              completedStyles = cloneStyleGrid(styles)
+              frameSize = 0
+              frameStart = i
+            }
             frameDepth++
           }
           csi(raw, final)
           i = j + 1
           if (sync && final === 'l' && frameDepth) {
             checkFrameSize(frameSize + i - frameStart)
-            if (--frameDepth === 0) { completedScreen = null; frameSize = 0; frameStart = null }
+            if (--frameDepth === 0) { completedScreen = null; completedStyles = null; frameSize = 0; frameStart = null }
           }
           continue
         }
@@ -110,7 +275,12 @@ export function terminalScreen(cols, rows) {
         if (kind === '8') [x, y] = saved
         if (kind === 'D') lineFeed()
         if (kind === 'E') { x = 0; lineFeed() }
-        if (kind === 'M') { if (y === scrollTop) { cells.splice(scrollBottom, 1); cells.splice(scrollTop, 0, blank()) } else y = clamp(y - 1, rows - 1) }
+        if (kind === 'M') {
+          if (y === scrollTop) {
+            cells.splice(scrollBottom, 1); cells.splice(scrollTop, 0, blank())
+            styles.splice(scrollBottom, 1); styles.splice(scrollTop, 0, blankStyleLine())
+          } else y = clamp(y - 1, rows - 1)
+        }
         // Character-set designation consumes one additional byte.
         if ('()*+'.includes(kind)) { if (i + 2 >= pending.length) break; i += 3 } else i += 2
         wrap = false; continue
@@ -124,12 +294,22 @@ export function terminalScreen(cols, rows) {
       if (char === '\t') { x = Math.min(cols - 1, (Math.floor(x / 8) + 1) * 8); wrap = false; continue }
       if (cp < 32 || cp === 127) continue
       if (/\p{Mark}/u.test(char) || cp === 0xfe0f || cp === 0x200d) { if (x > 0) cells[y][x - 1] += char; continue }
-      // Preserve the existing emoji approximation while handling the complete
-      // East Asian W/F ranges, including supplementary-plane scripts.
+      // Width caveat: this observer is a pragmatic oracle for the pinned host,
+      // not a general wcwidth implementation. It treats the complete East Asian
+      // W/F ranges, including supplementary-plane scripts, as two cells and
+      // approximates the emoji block 0x1f300-0x1faff as two cells. Emoji
+      // presentation selectors and ZWJ sequences are folded into the preceding
+      // cell instead of being measured as grapheme clusters. Assertions that
+      // depend on exact width for such sequences must use the host renderer's
+      // widthMethod instead of this screen model.
       const wide = isEastAsianWide(cp) || (cp >= 0x1f300 && cp <= 0x1faff)
       if (wrap || (wide && x === cols - 1)) { x = 0; lineFeed(); wrap = false }
       cells[y][x] = char
-      if (wide && x + 1 < cols) cells[y][x + 1] = ''
+      styles[y][x] = currentStyle
+      if (wide && x + 1 < cols) {
+        cells[y][x + 1] = ''
+        styles[y][x + 1] = currentStyle
+      }
       x += wide ? 2 : 1
       if (x >= cols) { x = cols - 1; wrap = true }
     }
@@ -147,6 +327,17 @@ export function terminalScreen(cols, rows) {
   return {
     write,
     screen: () => { if (failure) throw failure; return frameDepth ? completedScreen : render() },
+    // Coordinates are zero-based terminal cells. The style belongs to the
+    // currently rendered (completed synchronized) frame, not an incomplete
+    // update that is still being received from the host.
+    styleAt: (row, column) => {
+      if (failure) throw failure
+      if (!Number.isInteger(row) || row < 0 || row >= rows || !Number.isInteger(column) || column < 0 || column >= cols) {
+        throw new RangeError(`Terminal style coordinate (${row}, ${column}) is outside ${cols}x${rows}`)
+      }
+      const grid = frameDepth ? completedStyles : styles
+      return cloneStyle(grid?.[row]?.[column] ?? emptyStyle())
+    },
   }
 }
 
@@ -228,6 +419,7 @@ export async function startSidebarPty({ pluginPath, sessionID, setupRoot, sessio
     let closed = false, closePromise
     return {
       screen: () => { active.healthy(); return screen.screen() },
+      styleAt: (row, column) => { active.healthy(); return screen.styleAt(row, column) },
       send: input => { active.healthy(); if (closed || active.state.targetExit) throw new Error('OpenCode TUI is not running'); if (typeof input !== 'string') throw new TypeError('Terminal input must be a string'); active.terminal.write(input) },
       waitFor: async predicate => {
         const deadline = Date.now() + TIMEOUT_SECONDS * 1000

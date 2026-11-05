@@ -17,6 +17,51 @@ test('a partial synchronized frame cannot satisfy a screen predicate', () => {
   assert.equal(terminal.screen(), 'new content')
 })
 
+test('SGR bold, foreground, background, and reset attributes are stored per rendered cell', () => {
+  const terminal = terminalScreen(10, 1)
+  const style = '\x1b[1;38;2;12;34;56;48;5;23m'
+  terminal.write(style.slice(0, 8))
+  terminal.write(style.slice(8) + 'A\x1b[0mB')
+
+  assert.deepEqual(terminal.styleAt(0, 0), {
+    bold: true,
+    dim: false,
+    italic: false,
+    underline: false,
+    inverse: false,
+    hidden: false,
+    strikethrough: false,
+    foreground: { mode: 'rgb', value: [12, 34, 56] },
+    background: { mode: 'indexed', value: 23 },
+  })
+  assert.deepEqual(terminal.styleAt(0, 1), {
+    bold: false,
+    dim: false,
+    italic: false,
+    underline: false,
+    inverse: false,
+    hidden: false,
+    strikethrough: false,
+    foreground: null,
+    background: null,
+  })
+})
+
+test('SGR styles remain atomic across an unfinished synchronized frame', () => {
+  const terminal = terminalScreen(10, 1)
+  terminal.write('\x1b[38;5;4mA')
+  const previousStyle = terminal.styleAt(0, 0)
+
+  terminal.write(begin + home + '\x1b[1;48;2;1;2;3mB')
+  assert.equal(terminal.screen(), 'A')
+  assert.deepEqual(terminal.styleAt(0, 0), previousStyle)
+
+  terminal.write(end)
+  assert.equal(terminal.screen(), 'B')
+  assert.equal(terminal.styleAt(0, 0).bold, true)
+  assert.deepEqual(terminal.styleAt(0, 0).background, { mode: 'rgb', value: [1, 2, 3] })
+})
+
 test('every split of the begin and end escapes preserves atomicity', () => {
   for (let startSplit = 0; startSplit <= begin.length; startSplit++) {
     for (let endSplit = 0; endSplit <= end.length; endSplit++) {
