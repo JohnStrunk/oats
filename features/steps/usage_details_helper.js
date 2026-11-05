@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { detailsFixture, message, model, modelInfo, usage } from './usage_details_fixture.js'
 import { eventually, screen, startScenario, updateControl } from './sidebar_scenario_helper.js'
 import { COLS as TEST_SCREEN_COLUMNS, ROWS as TEST_SCREEN_ROWS } from './sidebar_pty_driver.js'
@@ -6,6 +7,10 @@ import { displayWidth } from '../real-host-tests/terminal_screen.js'
 import { hasDetailsModal, lineWith, locateExactLabel, locateText, markedNumbers, panelFrame, rowNumbers, terminalCells } from './usage_details_screen.js'
 
 export { lineWith, markedNumbers, rowNumbers }
+
+function reportedCostMatch(content) {
+  return [...content.matchAll(/(?:<-\$[\d,]+(?:\.\d+)?|>\$[\d,]+(?:\.\d+)?|-\$[\d,]+(?:\.\d+)?|\$-?[\d,]+(?:\.\d+)?|unknown|unavailable)e?\b/giu)].at(-1) ?? null
+}
 
 function sendMouseClick(world, column, row) {
   world.sidebarPty.send(`\x1b[<0;${column + 1};${row + 1}M\x1b[<0;${column + 1};${row + 1}m`)
@@ -100,13 +105,19 @@ function terminalPosition(line, row, value) {
   return { row, column: displayWidth(line.slice(0, index)) }
 }
 
-function textStyle(world, text, value, row = undefined) {
+function textStyle(world, text, value, row = undefined, column = undefined) {
   assert.equal(world.sidebarPty.screen(), text,
     'Text and SGR attributes must be read from the same rendered PTY screen')
   const lines = text.split('\n')
   const rowIndex = row ?? lines.findIndex(line => line.includes(value))
   assert.ok(rowIndex >= 0, `Missing text "${value}" before its terminal style can be checked\n${text}`)
-  const position = terminalPosition(lines[rowIndex], rowIndex, value)
+  const position = column === undefined
+    ? terminalPosition(lines[rowIndex], rowIndex, value)
+    : { row: rowIndex, column }
+  if (column !== undefined) {
+    const visible = terminalCells(lines[rowIndex]).slice(column, column + displayWidth(value)).join('')
+    assert.equal(visible, value, `Text "${value}" must occupy its selected panel cells\n${text}`)
+  }
   let offset = 0
   let firstStyle = null
   for (const char of value) {
@@ -120,69 +131,231 @@ function textStyle(world, text, value, row = undefined) {
   return { position, style: firstStyle }
 }
 
-function assertEmphasizedAgainstData(world, text, emphasizedText, normalDataCell, row = undefined) {
-  const emphasized = textStyle(world, text, emphasizedText, row)
-  const normal = textStyle(world, text, normalDataCell.value, normalDataCell.row)
-  assert.notDeepEqual(emphasized.style, normal.style,
-    `The emphasized text "${emphasizedText}" must have visible SGR styling distinct from the normal data cell "${normalDataCell.value}"; actual styles were ${JSON.stringify(emphasized.style)} and ${JSON.stringify(normal.style)}\n${text}`)
-  return { emphasized, normal }
+function panelContent(line, frame) {
+  return terminalCells(line).slice(frame.left + 1, frame.right).join('')
+}
+
+function panelRows(frame) {
+  return frame.lines.slice(frame.top + 1, frame.bottom).map((line, index) => {
+    const row = frame.top + 1 + index
+    return { line, row, content: panelContent(line, frame) }
+  })
+}
+
+function panelColumn(frame, content, index) {
+  return frame.left + 1 + displayWidth(content.slice(0, index))
+}
+
+function colorStyle(style) {
+  return { foreground: style.foreground, background: style.background }
+}
+
+async function assertNightOwlThemeTokens(world) {
+  if (world.sidebarTheme !== 'nightowl') return
+
+  let serializedTheme
+  try {
+    serializedTheme = await readFile(`${world.sidebarControl}.theme`, 'utf8')
+  } catch (error) {
+    assert.fail(`The synthetic host adapter must capture resolved Night Owl theme tokens: ${error.message}`)
+  }
+  const raised = JSON.parse(serializedTheme).background?.raised
+  const isColorTuple = value => Array.isArray(value) && value.length === 4 &&
+    value.every(channel => Number.isInteger(channel) && channel >= 0 && channel <= 255)
+  assert.ok(isColorTuple(raised?.base) && isColorTuple(raised?.high) && isColorTuple(raised?.max),
+    `The synthetic host adapter must report resolved raised base/high/max tokens via toInts(); captured ${JSON.stringify(raised)}`)
+  assert.deepEqual(raised.high, raised.base,
+    'Pinned OpenCode v2.1.4 Night Owl must resolve raised.high to the same color as raised.base')
+  assert.notDeepEqual(raised.max, raised.base,
+    'Pinned OpenCode v2.1.4 Night Owl must resolve raised.max to a color distinct from raised.base')
+}
+
+async function modalForColorAssertion(world) {
+  const text = await modal(world)
+  await assertNightOwlThemeTokens(world)
+  return text
+}
+
+function assertColorStylesDistinct(styledStyle, normalStyle, styledText, normalDataCell, text) {
+  // Deliberately ignore bold and every other non-color SGR attribute: only
+  // foreground/background colors from the rendered PTY cells satisfy this
+  // assertion.
+  const styledColor = colorStyle(styledStyle)
+  const normalColor = colorStyle(normalStyle)
+  assert.notDeepEqual(styledColor, normalColor,
+    `The rendered SGR foreground or background color of "${styledText}" must differ from ordinary numeric data "${normalDataCell.value}"; actual color attributes were ${JSON.stringify(styledColor)} and ${JSON.stringify(normalColor)}\n${text}`)
+  return { styledColor, normalColor }
+}
+
+function assertColorDistinctAgainstData(world, text, styledText, normalDataCell, row = undefined, column = undefined) {
+  const styled = textStyle(world, text, styledText, row, column)
+  const normal = textStyle(world, text, normalDataCell.value, normalDataCell.row, normalDataCell.column)
+  return assertColorStylesDistinct(styled.style, normal.style, styledText, normalDataCell, text)
+}
+
+function assertBackgroundDistinctAgainstData(world, text, styledText, normalDataCell, row = undefined, column = undefined) {
+  const styled = textStyle(world, text, styledText, row, column)
+  const normal = textStyle(world, text, normalDataCell.value, normalDataCell.row, normalDataCell.column)
+  assert.notDeepEqual(styled.style.background, normal.style.background,
+    `The rendered SGR background color of "${styledText}" must differ from ordinary numeric data "${normalDataCell.value}"; actual backgrounds were ${JSON.stringify(styled.style.background)} and ${JSON.stringify(normal.style.background)}\n${text}`)
+  return styled.style.background
+}
+
+function assertBlankCellsMatchBackgroundAndDifferFromData(world, text, description, row, startColumn, endColumn, expectedBackground, normalDataCell) {
+  assert.ok(endColumn > startColumn, `${description} must contain at least one blank terminal cell\n${text}`)
+  assert.ok(expectedBackground !== null && expectedBackground !== undefined,
+    `${description} must have an explicit adjacent heading/label SGR background\n${text}`)
+  assert.equal(world.sidebarPty.screen(), text,
+    'Text and SGR attributes must be read from the same rendered PTY screen')
+  const normalBackground = world.sidebarPty.styleAt(normalDataCell.row, normalDataCell.column).background
+  assert.equal(world.sidebarPty.screen(), text,
+    'The PTY screen must remain stable while its rendered SGR style is read')
+  const cells = terminalCells(text.split('\n')[row])
+  for (let column = startColumn; column < endColumn; column += 1) {
+    assert.equal(cells[column], ' ', `${description} at terminal column ${column} must be blank\n${text}`)
+    assert.equal(world.sidebarPty.screen(), text,
+      'Text and SGR attributes must be read from the same rendered PTY screen')
+    const actualBackground = world.sidebarPty.styleAt(row, column).background
+    assert.equal(world.sidebarPty.screen(), text,
+      'The PTY screen must remain stable while its rendered SGR style is read')
+    assert.ok(actualBackground !== null && actualBackground !== undefined,
+      `${description} cell at terminal column ${column} must have an explicit SGR background\n${text}`)
+    assert.deepEqual(actualBackground, expectedBackground,
+      `${description} cell at terminal column ${column} must match the adjacent heading/label background; actual background was ${JSON.stringify(actualBackground)} and expected ${JSON.stringify(expectedBackground)}\n${text}`)
+    assert.notDeepEqual(actualBackground, normalBackground,
+      `${description} cell at terminal column ${column} must have a background distinct from ordinary numeric data; actual background was ${JSON.stringify(actualBackground)}\n${text}`)
+  }
 }
 
 function firstNumericDataCell(text) {
-  const row = lineWith(text, 'Tokens')
-  const rowIndex = text.split('\n').indexOf(row)
-  const match = /\d[\d,]*(?:\.\d+)?/.exec(row)
-  assert.ok(match, `A numeric Token cell must be visible as the normal-data style control\n${text}`)
-  assert.ok(rowIndex >= 0, `A Tokens row must be visible as the normal-data style control\n${text}`)
-  return { value: match[0], row: rowIndex }
+  const frame = panelFrame(text)
+  assert.ok(frame, `The bordered usage details panel must be visible before normal numeric data is selected\n${text}`)
+  for (const entry of panelRows(frame)) {
+    const label = /^\s*Tokens\b/i.exec(entry.content)
+    if (!label) continue
+    const match = /\d[\d,]*(?:\.\d+)?/.exec(entry.content.slice(label[0].length))
+    if (!match) continue
+    const index = label[0].length + match.index
+    return {
+      value: match[0],
+      row: entry.row,
+      column: panelColumn(frame, entry.content, index),
+    }
+  }
+  assert.fail(`A numeric Token cell inside the usage details panel must be visible as the normal-data style control\n${text}`)
 }
 
-export async function assertModalTitleEmphasized(world) {
-  const text = await modal(world)
-  assertEmphasizedAgainstData(world, text, 'Agent cost details', firstNumericDataCell(text))
+export async function assertModalTitleColorDistinct(world) {
+  const text = await modalForColorAssertion(world)
+  assertColorDistinctAgainstData(world, text, 'Agent cost details', firstNumericDataCell(text))
 }
 
-export async function assertPairHeadingsEmphasized(world) {
-  const text = await modal(world)
-  const lines = text.split('\n')
+export async function assertPairHeadingsColorDistinct(world) {
+  const text = await modalForColorAssertion(world)
+  const frame = panelFrame(text)
+  assert.ok(frame, `The usage details panel must be visible before pair heading colors are checked\n${text}`)
   const normalCell = firstNumericDataCell(text)
-  const normal = textStyle(world, text, normalCell.value, normalCell.row)
-  const pairRows = lines.map((line, row) => ({ line, row }))
-    .filter(({ line }) => line.includes('alpha - ') && /\$\d/.test(line))
-  assert.ok(pairRows.length > 0, `At least one pair heading must be visible before its style is checked\n${text}`)
-  for (const { line, row } of pairRows) {
-    const identityStart = line.indexOf('alpha - ')
-    const costMatch = /\$\d[\d,]*(?:\.\d+)?e?/.exec(line)
-    assert.ok(costMatch, `Each pair heading must show its reported cost\n${text}`)
-    const identity = line.slice(identityStart, costMatch.index).trimEnd()
-    const identityStyle = textStyle(world, text, identity, row)
-    const costStyle = textStyle(world, text, costMatch[0], row)
-    assert.notDeepEqual(identityStyle.style, normal.style,
-      `Pair identity "${identity}" must stand out from normal data\n${text}`)
-    assert.notDeepEqual(costStyle.style, normal.style,
-      `Pair reported cost "${costMatch[0]}" must stand out from normal data\n${text}`)
+  const pairRows = panelRows(frame).filter(({ content }) => content.includes(' - '))
+  assert.ok(pairRows.length > 0, `At least one pair heading inside the usage details panel must be visible before its style is checked\n${text}`)
+  for (const { content, row } of pairRows) {
+    const costMatch = reportedCostMatch(content)
+    assert.ok(costMatch, `Each pair heading inside the usage details panel must show a currency, unknown, or unavailable reported cost\n${text}`)
+    const rawIdentity = content.slice(0, costMatch.index)
+    const identity = rawIdentity.trim()
+    assert.ok(identity.includes(' - '),
+      `Each pair heading must show its agent/model identity before its reported cost\n${text}`)
+    const identityStart = rawIdentity.indexOf(identity)
+    const identityColumn = panelColumn(frame, content, identityStart)
+    const costColumn = panelColumn(frame, content, costMatch.index)
+    assertColorDistinctAgainstData(world, text, identity, normalCell, row, identityColumn)
+    assertColorDistinctAgainstData(world, text, costMatch[0], normalCell, row, costColumn)
   }
 }
 
-export async function assertTableHeadersEmphasized(world) {
+export async function assertUnavailableReportedCostHeading(world) {
   const text = await modal(world)
-  const lines = text.split('\n')
+  const frame = panelFrame(text)
+  assert.ok(frame, `The usage details panel must be visible before its unavailable-cost heading is checked\n${text}`)
+  const identity = `beta - ${model.providerID}/${model.id}`
+  const heading = panelRows(frame).find(({ content }) => content.includes(identity))
+  assert.ok(heading, `The ${identity} pair heading must be visible inside the panel\n${text}`)
+  const reportedCost = heading.content.slice(heading.content.indexOf(identity) + identity.length)
+  assert.match(reportedCost, /\b(?:unknown|unavailable)e?\b/iu,
+    `The ${identity} pair heading must show an unknown or unavailable reported cost\n${text}`)
+}
+
+export async function assertTableHeadingColorsDistinct(world) {
+  const text = await modalForColorAssertion(world)
+  const frame = panelFrame(text)
+  assert.ok(frame, `The usage details panel must be visible before table heading colors are checked\n${text}`)
   const normalCell = firstNumericDataCell(text)
-  const normal = textStyle(world, text, normalCell.value, normalCell.row).style
-  const columnHeaderRow = lines.findIndex(line => /input\s+output\s+cache write\s+cache read/i.test(line))
-  assert.ok(columnHeaderRow >= 0, `The table's column-heading row must be visible before its styles are checked\n${text}`)
-  for (const label of ['input', 'output', 'cache write', 'cache read']) {
-    const header = textStyle(world, text, label, columnHeaderRow)
-    assert.notDeepEqual(header.style, normal,
-      `Table heading/row label "${label}" must have visible SGR styling distinct from the normal numeric data cell; actual styles were ${JSON.stringify(header.style)} and ${JSON.stringify(normal)}\n${text}`)
+  const columnHeader = panelRows(frame).find(({ content }) => /input\s+output\s+cache write\s+cache read/i.test(content))
+  assert.ok(columnHeader, `The table's column-heading row must be visible inside the panel before its styles are checked\n${text}`)
+  const columnLabels = ['input', 'output', 'cache write', 'cache read']
+  const headingBackgrounds = new Map()
+  for (const label of columnLabels) {
+    const index = columnHeader.content.indexOf(label)
+    assert.ok(index >= 0, `The column heading "${label}" must be inside the heading row\n${text}`)
+    const headingBackground = assertBackgroundDistinctAgainstData(
+      world, text, label, normalCell, columnHeader.row, panelColumn(frame, columnHeader.content, index),
+    )
+    headingBackgrounds.set(label, headingBackground)
   }
+
+  const firstHeadingColumn = panelColumn(frame, columnHeader.content, columnHeader.content.indexOf(columnLabels[0]))
+  assertBlankCellsMatchBackgroundAndDifferFromData(
+    world,
+    text,
+    'the leading blank row-label area in the column-heading row',
+    columnHeader.row,
+    // The panel's established two-cell inset is outside the table's row-label
+    // area; compare the remaining leading blanks with the first heading.
+    frame.left + 3,
+    firstHeadingColumn,
+    headingBackgrounds.get(columnLabels[0]),
+    normalCell,
+  )
+
+  for (let index = 0; index < columnLabels.length - 1; index++) {
+    const label = columnLabels[index]
+    const nextLabel = columnLabels[index + 1]
+    const spacerStart = panelColumn(frame, columnHeader.content, columnHeader.content.indexOf(label) + label.length)
+    const spacerEnd = panelColumn(frame, columnHeader.content, columnHeader.content.indexOf(nextLabel))
+    assert.ok(spacerEnd > spacerStart,
+      `The column-heading row must include a visible padded or spacer cell between "${label}" and "${nextLabel}"\n${text}`)
+    assertBlankCellsMatchBackgroundAndDifferFromData(
+      world,
+      text,
+      `padded/spacer cells between "${label}" and "${nextLabel}" in the column-heading row`,
+      columnHeader.row,
+      spacerStart,
+      spacerEnd,
+      headingBackgrounds.get(label),
+      normalCell,
+    )
+  }
+
   for (const label of ['Price', 'Tokens', 'Cost']) {
-    const row = lineWith(text, label)
-    const rowIndex = lines.indexOf(row)
-    assert.ok(rowIndex >= 0, `The table's ${label} row label must be visible\n${text}`)
-    const header = textStyle(world, text, label, rowIndex)
-    assert.notDeepEqual(header.style, normal,
-      `Table heading/row label "${label}" must have visible SGR styling distinct from the normal numeric data cell; actual styles were ${JSON.stringify(header.style)} and ${JSON.stringify(normal)}\n${text}`)
+    const row = panelRows(frame).find(({ content }) => new RegExp(`^\\s*${label}\\b`, 'i').test(content))
+    assert.ok(row, `The table's ${label} row label must be visible inside the panel\n${text}`)
+    const labelStart = row.content.indexOf(label)
+    assert.ok(labelStart >= 0, `The table's ${label} row label must be inside its row\n${text}`)
+    const labelColumn = panelColumn(frame, row.content, labelStart)
+    const labelBackground = assertBackgroundDistinctAgainstData(world, text, label, normalCell, row.row, labelColumn)
+
+    const labelEndColumn = labelColumn + displayWidth(label)
+    assertBlankCellsMatchBackgroundAndDifferFromData(
+      world,
+      text,
+      `blank cells after the "${label}" row label and before its first numeric column`,
+      row.row,
+      labelEndColumn,
+      // Numeric values are right-aligned within their column; its start is the
+      // first heading's start, not the first visible digit or currency symbol.
+      firstHeadingColumn,
+      labelBackground,
+      normalCell,
+    )
   }
 }
 
@@ -190,17 +363,18 @@ export async function assertPairHeadingAlignment(world) {
   const text = await modal(world)
   const frame = panelFrame(text)
   assert.ok(frame, `The usage details modal must have a bordered panel before heading alignment is checked\n${text}`)
-  const lines = text.split('\n')
-  const headingRows = lines.map((line, row) => ({ line, row }))
-    .filter(({ line }) => line.includes('alpha - ') && /\$\d/.test(line))
-  assert.ok(headingRows.length > 0, `At least one pair heading must be visible\n${text}`)
+  const headingRows = panelRows(frame).filter(({ content }) => content.includes(' - '))
+  assert.ok(headingRows.length > 0, `At least one pair heading inside the usage details modal must be visible\n${text}`)
 
-  for (const { line, row } of headingRows) {
-    const identityStart = line.indexOf('alpha - ')
-    const costMatch = /\$\d[\d,]*(?:\.\d+)?e?/.exec(line)
-    assert.ok(costMatch, `Each pair heading must show its reported cost\n${text}`)
-    const identityColumn = displayWidth(line.slice(0, identityStart))
-    const costStart = displayWidth(line.slice(0, costMatch.index))
+  for (const { content, row } of headingRows) {
+    const costMatch = reportedCostMatch(content)
+    assert.ok(costMatch, `Each pair heading inside the usage details modal must show its reported cost\n${text}`)
+    const rawIdentity = content.slice(0, costMatch.index)
+    const identity = rawIdentity.trim()
+    assert.ok(identity.includes(' - '), `Each pair heading inside the usage details modal must show its agent/model identity before its reported cost\n${text}`)
+    const identityStart = rawIdentity.indexOf(identity)
+    const identityColumn = panelColumn(frame, content, identityStart)
+    const costStart = panelColumn(frame, content, costMatch.index)
     const costEnd = costStart + displayWidth(costMatch[0]) - 1
     assert.equal(identityColumn, frame.left + 3,
       `Pair agent/model identity on row ${row} must be left-justified at the padded panel edge\n${text}`)

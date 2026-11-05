@@ -119,3 +119,47 @@ test('sidebar adapter preserves the client Promise envelope with a client-only l
     assert.deepEqual(await response, { location: { directory: '.' }, data: models })
   })
 })
+
+test('sidebar adapter snapshots resolved host theme tokens only when requested', async () => {
+  const root = await createSidebarTemp('sidebar-adapter-theme-')
+  let dispose
+  try {
+    const oats = join(root, 'oats')
+    await mkdir(oats)
+    await writeFile(join(oats, 'package.json'), '{"type":"module"}')
+    await writeFile(join(oats, 'tui.js'), 'export default { setup() {} }')
+    const controlPath = join(root, 'control.json')
+    await writeFile(controlPath, JSON.stringify({}))
+    const directory = join(root, 'adapter')
+    await writeSidebarAdapter({ directory, controlPath, oatsPath: join(oats, 'tui.js'), captureTheme: true })
+    const plugin = (await import(pathToFileURL(join(directory, 'tui.js')).href)).default
+    const themeColor = values => ({ toInts: () => values })
+    const hostTheme = {
+      background: {
+        raised: {
+          base: themeColor([10, 20, 30, 255]),
+          high: themeColor([40, 50, 60, 255]),
+          max: themeColor([70, 80, 90, 255]),
+        },
+      },
+    }
+
+    dispose = await plugin.setup({
+      theme: hostTheme,
+      ui: { router: { navigate() {}, current() { return undefined } } },
+      data: { location: {} },
+      client: {},
+    })
+
+    assert.deepEqual(JSON.parse(await readFile(`${controlPath}.theme`, 'utf8')), {
+      background: { raised: {
+        base: [10, 20, 30, 255],
+        high: [40, 50, 60, 255],
+        max: [70, 80, 90, 255],
+      } },
+    })
+  } finally {
+    await dispose?.()
+    await rm(root, { recursive: true, force: true })
+  }
+})

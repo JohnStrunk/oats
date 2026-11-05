@@ -391,7 +391,7 @@ async function supervised(executable, args, cwd, env, socketPath, onData) {
  * calls its predicate with that screen until truthy, or rejects after 30s.
  * Always await close(); unconfirmed cleanup fails and retains the private tree.
  */
-export async function startSidebarPty({ pluginPath, sessionID, setupRoot, sessionIDs = [sessionID] }) {
+export async function startSidebarPty({ pluginPath, sessionID, setupRoot, sessionIDs = [sessionID], themeName }) {
   if (!path.isAbsolute(pluginPath) || !path.isAbsolute(setupRoot) || !Array.isArray(sessionIDs) || !sessionIDs.includes(sessionID) || sessionIDs.some(id => typeof id !== 'string' || !/^ses_[A-Za-z0-9_-]+$/.test(id))) throw new Error('Expected absolute pluginPath and setupRoot and valid session IDs')
   const executable = process.env.OATS_OPENCODE ?? 'opencode'
   await supportedHostVersion(executable)
@@ -401,7 +401,7 @@ export async function startSidebarPty({ pluginPath, sessionID, setupRoot, sessio
   try {
     const project = path.join(root, 'project')
     await fs.mkdir(project)
-    const env = { ...isolatedEnvironment(root, [pluginPath]), TMPDIR: root, XDG_RUNTIME_DIR: root }
+    const env = { ...isolatedEnvironment(root, [pluginPath], themeName), TMPDIR: root, XDG_RUNTIME_DIR: root }
     const fixture = path.join(root, 'session.json')
     for (const id of new Set(sessionIDs)) {
       await fs.writeFile(fixture, JSON.stringify({ info: { id, projectID: 'sidebar-test', title: 'Sidebar test', agent: 'sidebar-test', model: { providerID: 'sidebar-test', id: 'sidebar-test' }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, time: { created: Date.now(), updated: Date.now() }, location: { directory: project } }, messages: [] }))

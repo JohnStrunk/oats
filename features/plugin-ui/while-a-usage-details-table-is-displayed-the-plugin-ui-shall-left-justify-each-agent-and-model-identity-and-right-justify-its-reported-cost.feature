@@ -12,3 +12,16 @@ Feature: While a usage details table is displayed, the plugin UI shall left-just
     When the Agent stats session is displayed
     And the user clicks the usage details link
     Then each usage details pair heading shall align its identity left and reported cost right
+
+  Scenario: A negative reported cost stays right-justified
+    Given the usage details host fixture "negative reported cost"
+    When the Agent stats session is displayed
+    And the user clicks the usage details link
+    Then each usage details pair heading shall align its identity left and reported cost right
+
+  Scenario: An unavailable reported cost stays right-justified
+    Given the usage details host fixture "unknown"
+    When the Agent stats session is displayed
+    And the user clicks the usage details link
+    Then the usage details modal shall show an unavailable reported-cost heading
+    And each usage details pair heading shall align its identity left and reported cost right
