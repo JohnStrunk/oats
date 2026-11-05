@@ -56,8 +56,8 @@ specification of the system:
   Cucumber options after `--`, for example
   `npm run test:features -- --tags '@component:repo-infrastructure'`.
   Real-host smoke tests require the host and isolation prerequisites documented
-  in [README.md](README.md). This stack does not prohibit Python in native
-  dependency builds or unrelated tooling.
+  in [docs/testing-ci.md](docs/testing-ci.md). This stack does not prohibit
+  Python in native dependency builds or unrelated tooling.
 - **Freedom of choice:** Unless an authoritative requirement in
   [`/Vision.md`](Vision.md), [`/Architecture.md`](Architecture.md), or
   [`/features/**`](features) explicitly mandates a specific technology, the
