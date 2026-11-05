@@ -34,6 +34,17 @@ documentation](https://opencode.ai/v2/docs/cli/config) for the config location
 and [V2 CLI plugin documentation](https://opencode.ai/v2/docs/cli/plugins) for
 plugin configuration.
 
+Example `cli.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "plugins": [
+    "git+https://github.com/JohnStrunk/oats.git#main"
+  ]
+}
+```
+
 ## Documentation
 
 ### User docs
