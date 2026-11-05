@@ -140,9 +140,10 @@ features/
 - Run `npm run test:real-host` with `OATS_OPENCODE` set to the absolute path of
   the pinned host for the session-data contract. This explicit command fails
   if prerequisites are unavailable or a required test is skipped.
-- Follow [README.md](../README.md) for real-host smoke-test prerequisites and
-  isolation constraints. A test-framework migration must preserve observable
-  assertions and negative controls, not replace them with mock-only checks.
+- Follow [docs/testing-ci.md](../docs/testing-ci.md) for real-host smoke-test
+  prerequisites and isolation constraints. A test-framework migration must
+  preserve observable assertions and negative controls, not replace them with
+  mock-only checks.
 
 ---
 

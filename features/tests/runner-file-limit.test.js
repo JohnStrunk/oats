@@ -6,10 +6,10 @@
 // descendants, with a fail-closed refusal when the ceiling cannot be
 // established.
 //
-// The ceiling is part of every `runProcess` launch (see README
-// "Runner-contract disk limits"), so no option is passed here. Ordinary
-// runner-contract semantics outside the ceiling (exit status, captured output,
-// timeout reporting, bounded reads) must keep working.
+// The ceiling is part of every `runProcess` launch; see
+// `docs/testing-ci.md`, "Runner-contract disk limits". No option is passed
+// here. Ordinary runner-contract semantics outside the ceiling (exit status,
+// captured output, timeout reporting, bounded reads) must keep working.
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { spawnSync } from 'node:child_process'
