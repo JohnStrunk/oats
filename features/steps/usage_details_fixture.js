@@ -56,11 +56,18 @@ export function detailsFixture(kind) {
     fixture.messages[child] = []
     fixture.models = ['a-model', 'z-model'].map(id => modelInfo('p', id))
   } else if (kind === 'unknown') {
-    fixture.messages[root] = [message('known', 'alpha', model, 2, null), message('missing', 'alpha', model, null, null)]
+    fixture.messages[root] = [
+      message('known', 'alpha', model, 2, null),
+      message('missing', 'alpha', model, null, null),
+      message('unknown-only', 'beta', model, null, usage),
+    ]
     fixture.messages[child] = []
     fixture.models = []
   } else if (kind === 'partial reported cost') {
     fixture.messages[root] = [message('reported-known', 'alpha', model, 1), message('reported-missing', 'alpha', model, null)]
+    fixture.messages[child] = []
+  } else if (kind === 'negative reported cost') {
+    fixture.messages[root] = [message('reported-negative', 'alpha', model, -1)]
     fixture.messages[child] = []
   } else if (kind === 'partial tokens') {
     fixture.messages[root] = [message('known', 'alpha'), message('missing', 'alpha', model, 2, null)]

@@ -321,12 +321,17 @@ export async function startScenario(world, name, initialFixture) {
     await writeFile(path.join(pluginDir, 'tui.js'), "export default { id: 'sidebar.negative.control', setup() {} }\n")
   } else {
     const { writeSidebarAdapter } = await import('./sidebar_adapter.js')
-    await writeSidebarAdapter({ directory: pluginDir, controlPath: world.sidebarControl, oatsPath: path.join(root, 'tui.js') })
+    await writeSidebarAdapter({
+      directory: pluginDir,
+      controlPath: world.sidebarControl,
+      oatsPath: path.join(root, 'tui.js'),
+      captureTheme: world.sidebarTheme !== undefined,
+    })
   }
   const { startSidebarPty } = await import('./sidebar_pty_driver.js')
   const sessionIDs = [world.sidebarFixture.route]
   if (world.sidebarFixture.sessions.some(item => item.id === 'ses_oats_new_root')) sessionIDs.push('ses_oats_new_root')
-  await launchSidebar(world, () => startSidebarPty({ pluginPath: pluginDir, sessionID: world.sidebarFixture.route, sessionIDs, setupRoot: world.sidebarTemp }))
+  await launchSidebar(world, () => startSidebarPty({ pluginPath: pluginDir, sessionID: world.sidebarFixture.route, sessionIDs, setupRoot: world.sidebarTemp, themeName: world.sidebarTheme }))
 }
 
 export async function stopScenario(world) {

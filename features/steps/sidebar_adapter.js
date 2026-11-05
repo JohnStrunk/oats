@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
  * controlled; OATS's plugin and the host's UI, router and renderer are real.
  * The control file's events are an append-only sequence for one run.
  */
-export async function writeSidebarAdapter({ directory, controlPath, oatsPath }) {
+export async function writeSidebarAdapter({ directory, controlPath, oatsPath, captureTheme = false }) {
   await mkdir(directory, { recursive: true })
   await writeFile(join(directory, 'package.json'), JSON.stringify({
     name: 'oats-sidebar-adapter',
@@ -21,6 +21,7 @@ export async function writeSidebarAdapter({ directory, controlPath, oatsPath }) 
 import oats from ${JSON.stringify(oatsUrl)}
 
 const controlPath = ${JSON.stringify(resolve(controlPath))}
+const captureTheme = ${JSON.stringify(captureTheme)}
 const read = () => JSON.parse(readFileSync(controlPath, 'utf8'))
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url')
 const decode = (value) => {
@@ -40,6 +41,16 @@ export default {
   id: 'oats.sidebar.fixture',
   async setup(host) {
     let control = read()
+    if (captureTheme) {
+      const raised = host.theme.background.raised
+      writeFileSync(controlPath + '.theme', JSON.stringify({
+        background: { raised: {
+          base: raised.base.toInts(),
+          high: raised.high.toInts(),
+          max: raised.max.toInts(),
+        } },
+      }))
+    }
     let disposed = false
     let delivered = 0
     let lastRoute

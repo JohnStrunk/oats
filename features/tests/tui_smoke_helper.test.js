@@ -21,6 +21,7 @@ import {
   assertNoSystemConfig,
   connectSupervisor,
   createOutputCapture,
+  isolatedEnvironment,
   runTui,
   SUPERVISOR_PATH,
 } from "../steps/tui_smoke_helper.js";
@@ -68,6 +69,22 @@ afterEach(() => {
   } else {
     process.env.OATS_OPENCODE = originalOpenCode;
   }
+});
+
+test("isolatedEnvironment preserves the default theme unless one is requested", () => {
+  const defaultConfig = JSON.parse(
+    isolatedEnvironment("/tmp/opencode/oats-theme-default", ["/tmp/opencode/plugin"]).OPENCODE_CLI_CONFIG_CONTENT,
+  );
+  assert.deepEqual(defaultConfig, { plugins: ["/tmp/opencode/plugin"], highlights: false });
+
+  const themedConfig = JSON.parse(
+    isolatedEnvironment("/tmp/opencode/oats-theme-nightowl", ["/tmp/opencode/plugin"], "nightowl").OPENCODE_CLI_CONFIG_CONTENT,
+  );
+  assert.deepEqual(themedConfig, {
+    plugins: ["/tmp/opencode/plugin"],
+    highlights: false,
+    theme: { name: "nightowl" },
+  });
 });
 
 function withTempDir(t) {

@@ -683,7 +683,13 @@ export async function spawnRealPty(file, args, options) {
   return pty.spawn(file, args, options);
 }
 
-export function isolatedEnvironment(root, configuredPlugins) {
+export function isolatedEnvironment(root, configuredPlugins, themeName) {
+  const config = {
+    plugins: configuredPlugins,
+    highlights: false,
+  }
+  if (themeName !== undefined) config.theme = { name: themeName }
+
   return {
     PATH: process.env.PATH ?? "/bin:/usr/bin",
     LC_ALL: "C.UTF-8",
@@ -696,10 +702,7 @@ export function isolatedEnvironment(root, configuredPlugins) {
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     OPENCODE_DISABLE_MODELS_FETCH: "1",
     OPENCODE_DISABLE_AUTOUPDATE: "1",
-    OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({
-      plugins: configuredPlugins,
-      highlights: false,
-    }),
+    OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify(config),
   };
 }
 

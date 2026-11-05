@@ -1,6 +1,6 @@
 import { createMemo, createSignal, onCleanup } from 'solid-js'
 import { createElement, insert, setProp } from '@opentui/solid'
-import { measureEditText, TextAttributes } from '@opentui/core'
+import { measureEditText, normalizeColorValue, TextAttributes } from '@opentui/core'
 import { aggregateUsageDetails } from './pricing-attribution.js'
 
 let cachedModels = []
@@ -54,12 +54,67 @@ function hasSelectedText(context) {
   return Boolean(context?.renderer?.getSelection?.()?.getSelectedText?.())
 }
 
-function createText(text, attributes, fg) {
+function createText(text, attributes, fg, bg) {
   const node = createElement('text')
   if (fg !== undefined) setProp(node, 'fg', fg)
+  if (bg !== undefined) setProp(node, 'bg', bg)
   if (attributes !== undefined) setProp(node, 'attributes', attributes)
   insert(node, text)
   return node
+}
+
+function resolvedColorChannels(color) {
+  if (color == null) return undefined
+  try {
+    const channels = normalizeColorValue(color)?.rgba?.toInts?.()
+    return Array.isArray(channels) && channels.length === 4 && channels.every(Number.isFinite)
+      ? channels
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function hasVisibleColor(color) {
+  const channels = resolvedColorChannels(color)
+  return channels !== undefined && channels[3] > 0
+}
+
+function sameResolvedColor(left, right) {
+  const leftChannels = resolvedColorChannels(left)
+  const rightChannels = resolvedColorChannels(right)
+  return leftChannels !== undefined && rightChannels !== undefined &&
+    leftChannels.every((channel, index) => channel === rightChannels[index])
+}
+
+function distinctHeadingStyle(theme, raisedPreference, bodyFg) {
+  let surface
+  try {
+    if (typeof theme?.surface === 'function') surface = theme.surface('dialog')
+  } catch {}
+
+  const surfaceRaised = surface?.background?.raised
+  const rootRaised = theme?.background?.raised
+  const dialogBackground = surface?.background?.base ?? rootRaised?.base
+  const normalFg = bodyFg !== undefined ? bodyFg : surface?.text?.base ?? theme?.text?.base
+
+  for (const name of raisedPreference) {
+    const candidate = surfaceRaised?.[name] ?? rootRaised?.[name]
+    if (hasVisibleColor(candidate) &&
+      !sameResolvedColor(candidate, dialogBackground) &&
+      !sameResolvedColor(candidate, normalFg)) {
+      return { fg: normalFg, bg: candidate }
+    }
+  }
+
+  for (const name of ['muted', 'faint']) {
+    const candidate = surface?.text?.[name] ?? theme?.text?.[name]
+    if (hasVisibleColor(candidate) && !sameResolvedColor(candidate, normalFg)) {
+      return { fg: candidate, bg: undefined }
+    }
+  }
+
+  return { fg: normalFg, bg: undefined }
 }
 
 function measuredWidth(text, widthMethod) {
@@ -147,27 +202,39 @@ function tableLayout(pair, widthMethod) {
   return { rowLabelWidth, rows, columns }
 }
 
-function createTableHeader(layout, widthMethod, fg) {
-  const text = createElement('text')
-  if (fg !== undefined) setProp(text, 'fg', fg)
-  setProp(text, 'attributes', TextAttributes.BOLD)
+function createTableHeader(layout, widthMethod, headingStyle) {
   const parts = [' '.repeat(layout.rowLabelWidth)]
   for (let index = 0; index < layout.columns.length; index++) {
     const column = layout.columns[index]
     parts.push(padRight(column.label, column.width, widthMethod))
     if (index < layout.columns.length - 1) parts.push(' '.repeat(TABLE_COLUMN_GAP))
   }
-  insert(text, parts)
-  return text
+  return createText(parts, TextAttributes.BOLD, headingStyle.fg, headingStyle.bg)
 }
 
-function createTableRow(row, layout, widthMethod, fg) {
+function createTableRow(row, layout, widthMethod, bodyFg, headingStyle) {
   const rowBox = createElement('box')
   setProp(rowBox, 'flexDirection', 'row')
   setProp(rowBox, 'width', '100%')
   setProp(rowBox, 'flexShrink', 0)
 
-  const label = createText(padRight(row.label, layout.rowLabelWidth, widthMethod), TextAttributes.BOLD, fg)
+  const labelCell = createElement('box')
+  setProp(labelCell, 'width', layout.rowLabelWidth)
+  setProp(labelCell, 'height', 1)
+  setProp(labelCell, 'flexShrink', 0)
+  if (headingStyle.bg !== undefined) {
+    setProp(labelCell, 'backgroundColor', headingStyle.bg)
+  }
+
+  const label = createText(
+    headingStyle.bg === undefined
+      ? padRight(row.label, layout.rowLabelWidth, widthMethod)
+      : row.label,
+    TextAttributes.BOLD,
+    headingStyle.fg,
+    headingStyle.bg,
+  )
+  insert(labelCell, label)
   const values = []
 
   for (let index = 0; index < layout.columns.length; index++) {
@@ -176,15 +243,15 @@ function createTableRow(row, layout, widthMethod, fg) {
     values.push(`${padLeft(numeric, column.numericWidth, widthMethod)}${marker}`)
     if (index < layout.columns.length - 1) values.push(' '.repeat(TABLE_COLUMN_GAP))
   }
-  const numericValues = createText(values.join(''), undefined, fg)
-  insert(rowBox, [label, numericValues])
+  const numericValues = createText(values.join(''), undefined, bodyFg)
+  insert(rowBox, [labelCell, numericValues])
   return rowBox
 }
 
-function createPairContent(pair, widthMethod, panelWidth, headingRefs, fg) {
+function createPairContent(pair, widthMethod, panelWidth, headingRefs, bodyFg, headingStyle) {
   const identity = `${pair.agentDisplay} - ${pair.modelDisplay}`
   const appliedText = pairHeadingText(identity, pair.reportedCost, widthMethod, panelWidth)
-  const heading = createText(appliedText, TextAttributes.BOLD, fg)
+  const heading = createText(appliedText, TextAttributes.BOLD, headingStyle.fg, headingStyle.bg)
   // Keep a stable reference so layout can refit this heading in place instead
   // of replacing scrollbox children from inside onSizeChange.
   headingRefs.push({ node: heading, identity, reportedCost: pair.reportedCost, appliedText })
@@ -192,8 +259,8 @@ function createPairContent(pair, widthMethod, panelWidth, headingRefs, fg) {
   const layout = tableLayout(pair, widthMethod)
   return [
     heading,
-    createTableHeader(layout, widthMethod, fg),
-    ...layout.rows.map((row) => createTableRow(row, layout, widthMethod, fg)),
+    createTableHeader(layout, widthMethod, headingStyle),
+    ...layout.rows.map((row) => createTableRow(row, layout, widthMethod, bodyFg, headingStyle)),
   ]
 }
 
@@ -263,6 +330,9 @@ export function createUsageDetailsModalView(context, sessionData, input) {
   const [revision, setRevision] = createSignal(0, { equals: false })
   const widthMethod = context.renderer?.widthMethod
   const bodyFg = context.theme?.text?.base
+  // The title prefers max, while detail headings prefer high; each falls back to the other.
+  const titleStyle = distinctHeadingStyle(context?.theme, ['max', 'high'], bodyFg)
+  const detailsHeadingStyle = distinctHeadingStyle(context?.theme, ['high', 'max'], bodyFg)
   // Layout width is intentionally a plain variable, not a signal: changing it
   // must not invalidate the scrollbox's reactive children during onSizeChange.
   let measuredPanelWidth = 0
@@ -308,10 +378,7 @@ export function createUsageDetailsModalView(context, sessionData, input) {
   setProp(header, 'paddingLeft', 2)
   setProp(header, 'paddingRight', 2)
 
-  const title = createElement('text')
-  setProp(title, 'fg', context.theme?.text?.base)
-  setProp(title, 'attributes', TextAttributes.BOLD)
-  insert(title, MODAL_TITLE)
+  const title = createText(MODAL_TITLE, TextAttributes.BOLD, titleStyle.fg, titleStyle.bg)
 
   // Clearing the dialog runs the registered onClose cleanup, which also
   // releases the modal keymap layer. The esc label and the outside target
@@ -366,7 +433,14 @@ export function createUsageDetailsModalView(context, sessionData, input) {
 
     const content = []
     for (const [index, pair] of pairs.entries()) {
-      content.push(...createPairContent(pair, widthMethod, measuredPanelWidth, headingRefs, bodyFg))
+      content.push(...createPairContent(
+        pair,
+        widthMethod,
+        measuredPanelWidth,
+        headingRefs,
+        bodyFg,
+        detailsHeadingStyle,
+      ))
       if (index < pairs.length - 1) content.push(createText(' ', undefined, bodyFg))
     }
     return content
