@@ -1,7 +1,7 @@
-import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
+import { createMemo, createSignal, onCleanup } from 'solid-js'
 import { createElement, insert, setProp } from '@opentui/solid'
-import { measureEditText } from '@opentui/core'
-import { aggregateUsageDetails, renderPairTable } from './pricing-attribution.js'
+import { measureEditText, TextAttributes } from '@opentui/core'
+import { aggregateUsageDetails } from './pricing-attribution.js'
 
 let cachedModels = []
 
@@ -34,11 +34,167 @@ let activeScroll = null
 
 const MODAL_TITLE = 'Agent cost details'
 const MODAL_CLOSE_LABEL = 'esc'
+const TABLE_ROW_LABELS = ['Price', 'Tokens', 'Cost']
+const TABLE_COLUMNS = [
+  { key: 'input', label: 'input' },
+  { key: 'output', label: 'output' },
+  { key: 'cacheWrite', label: 'cache write' },
+  { key: 'cacheRead', label: 'cache read' },
+]
+const TABLE_COLUMN_GAP = 1
+const ELLIPSIS = '…'
+// `features/steps/usage_details_screen.js` documents that the pinned host
+// renders `size: 'large'` dialogs 88 columns wide. Use that as a conservative
+// pre-measurement width so the first frame cannot lay out an unbounded heading.
+const INITIAL_PANEL_WIDTH = 88
 
 // The host backdrop skips its mouse-up dismissal while text is selected, so
 // ending a drag-selection keeps the highlight instead of closing the modal.
 function hasSelectedText(context) {
   return Boolean(context?.renderer?.getSelection?.()?.getSelectedText?.())
+}
+
+function createText(text, attributes, fg) {
+  const node = createElement('text')
+  if (fg !== undefined) setProp(node, 'fg', fg)
+  if (attributes !== undefined) setProp(node, 'attributes', attributes)
+  insert(node, text)
+  return node
+}
+
+function measuredWidth(text, widthMethod) {
+  return measureEditText(text, { widthMethod })
+}
+
+function padRight(text, width, widthMethod) {
+  const padding = Math.max(0, width - measuredWidth(text, widthMethod))
+  return `${text}${' '.repeat(padding)}`
+}
+
+function padLeft(text, width, widthMethod) {
+  const padding = Math.max(0, width - measuredWidth(text, widthMethod))
+  return `${' '.repeat(padding)}${text}`
+}
+
+function splitIncompleteValue(value) {
+  const text = String(value ?? '—')
+  const marked = text.endsWith('e')
+  return {
+    numeric: marked ? text.slice(0, -1) : text,
+    marker: marked ? 'e' : ' ',
+  }
+}
+
+// Truncate `text` to at most `maxWidth` terminal cells, ending with a one-cell
+// ellipsis when anything was removed. Every prefix is measured with the host
+// renderer's widthMethod so wide (two-cell) glyphs and combining marks keep the
+// heading aligned on the real terminal grid.
+function truncateToWidth(text, maxWidth, widthMethod) {
+  if (maxWidth <= 0) return ''
+  if (measuredWidth(text, widthMethod) <= maxWidth) return text
+
+  const markerWidth = measuredWidth(ELLIPSIS, widthMethod)
+  const budget = maxWidth - markerWidth
+  if (budget <= 0) return ELLIPSIS
+
+  let visible = ''
+  let used = 0
+  for (const char of text) {
+    const charWidth = measuredWidth(char, widthMethod)
+    if (used + charWidth > budget) break
+    visible += char
+    used += charWidth
+  }
+  return `${visible}${ELLIPSIS}`
+}
+
+// Build the single heading line for an agent/model pair. The content spans the
+// padded panel interior, from three cells inside the left border to three cells
+// inside the right border (the right inset also reserves the scrollbar column).
+// The reported cost is always right-justified at that right edge; an overlong
+// identity is ellipsized in terminal cells so it never wraps or displaces the
+// cost. A panel width of zero means layout has not measured the modal yet, so
+// fall back to the pinned host's large-dialog width until onSizeChange reports
+// the real value.
+function pairHeadingText(identity, reportedCost, widthMethod, panelWidth) {
+  const measuredPanelWidth = Number.isFinite(panelWidth) && panelWidth > 0
+    ? Math.floor(panelWidth)
+    : INITIAL_PANEL_WIDTH
+  const costWidth = measuredWidth(reportedCost, widthMethod)
+  const headingWidth = Math.max(0, measuredPanelWidth - 6)
+  const maxIdentityWidth = Math.max(0, headingWidth - costWidth - 2)
+  const visibleIdentity = truncateToWidth(identity, maxIdentityWidth, widthMethod)
+  const visibleIdentityWidth = measuredWidth(visibleIdentity, widthMethod)
+  // Keep the existing two-cell separator. Flooring the remaining space keeps
+  // string padding an integer and never lets it go negative.
+  const headingGap = Math.max(2, Math.floor(headingWidth - visibleIdentityWidth - costWidth))
+  return `${visibleIdentity}${' '.repeat(headingGap)}${reportedCost}`
+}
+
+function tableLayout(pair, widthMethod) {
+  const rowLabelWidth = Math.max(
+    ...TABLE_ROW_LABELS.map((label) => measuredWidth(label, widthMethod)),
+  ) + 2
+  const rows = TABLE_ROW_LABELS.map((label) => ({ label, values: pair[label.toLowerCase()] }))
+  const columns = TABLE_COLUMNS.map(({ key, label }) => {
+    const numericWidth = Math.max(
+      ...rows.map(({ values }) => measuredWidth(splitIncompleteValue(values[key]).numeric, widthMethod)),
+    )
+    const width = Math.max(measuredWidth(label, widthMethod), numericWidth + 1)
+    return { key, label, width, numericWidth: width - 1 }
+  })
+
+  return { rowLabelWidth, rows, columns }
+}
+
+function createTableHeader(layout, widthMethod, fg) {
+  const text = createElement('text')
+  if (fg !== undefined) setProp(text, 'fg', fg)
+  setProp(text, 'attributes', TextAttributes.BOLD)
+  const parts = [' '.repeat(layout.rowLabelWidth)]
+  for (let index = 0; index < layout.columns.length; index++) {
+    const column = layout.columns[index]
+    parts.push(padRight(column.label, column.width, widthMethod))
+    if (index < layout.columns.length - 1) parts.push(' '.repeat(TABLE_COLUMN_GAP))
+  }
+  insert(text, parts)
+  return text
+}
+
+function createTableRow(row, layout, widthMethod, fg) {
+  const rowBox = createElement('box')
+  setProp(rowBox, 'flexDirection', 'row')
+  setProp(rowBox, 'width', '100%')
+  setProp(rowBox, 'flexShrink', 0)
+
+  const label = createText(padRight(row.label, layout.rowLabelWidth, widthMethod), TextAttributes.BOLD, fg)
+  const values = []
+
+  for (let index = 0; index < layout.columns.length; index++) {
+    const column = layout.columns[index]
+    const { numeric, marker } = splitIncompleteValue(row.values[column.key])
+    values.push(`${padLeft(numeric, column.numericWidth, widthMethod)}${marker}`)
+    if (index < layout.columns.length - 1) values.push(' '.repeat(TABLE_COLUMN_GAP))
+  }
+  const numericValues = createText(values.join(''), undefined, fg)
+  insert(rowBox, [label, numericValues])
+  return rowBox
+}
+
+function createPairContent(pair, widthMethod, panelWidth, headingRefs, fg) {
+  const identity = `${pair.agentDisplay} - ${pair.modelDisplay}`
+  const appliedText = pairHeadingText(identity, pair.reportedCost, widthMethod, panelWidth)
+  const heading = createText(appliedText, TextAttributes.BOLD, fg)
+  // Keep a stable reference so layout can refit this heading in place instead
+  // of replacing scrollbox children from inside onSizeChange.
+  headingRefs.push({ node: heading, identity, reportedCost: pair.reportedCost, appliedText })
+
+  const layout = tableLayout(pair, widthMethod)
+  return [
+    heading,
+    createTableHeader(layout, widthMethod, fg),
+    ...layout.rows.map((row) => createTableRow(row, layout, widthMethod, fg)),
+  ]
 }
 
 export function openUsageDetailsModal(context, sessionData, input) {
@@ -105,6 +261,12 @@ export function openUsageDetailsModal(context, sessionData, input) {
 
 export function createUsageDetailsModalView(context, sessionData, input) {
   const [revision, setRevision] = createSignal(0, { equals: false })
+  const widthMethod = context.renderer?.widthMethod
+  const bodyFg = context.theme?.text?.base
+  // Layout width is intentionally a plain variable, not a signal: changing it
+  // must not invalidate the scrollbox's reactive children during onSizeChange.
+  let measuredPanelWidth = 0
+  const headingRefs = []
 
   const unsubscribe = sessionData.subscribe(() => setRevision((v) => v + 1))
   onCleanup(unsubscribe)
@@ -115,6 +277,23 @@ export function createUsageDetailsModalView(context, sessionData, input) {
   setProp(outer, 'maxHeight', 30)
   setProp(outer, 'maxWidth', '100%')
   setProp(outer, 'flexDirection', 'column')
+  // Refit heading text nodes in place from the measured width. Replacing
+  // scrollbox children here would race the host's layout pass (see the same
+  // pattern and rationale in src/model-stats.js and src/agent-stats.js).
+  const fitHeadings = () => {
+    const measured = Math.floor(outer.width)
+    if (!Number.isFinite(measured) || measured <= 0) return
+    measuredPanelWidth = measured
+    for (const ref of headingRefs) {
+      const next = pairHeadingText(ref.identity, ref.reportedCost, widthMethod, measuredPanelWidth)
+      if (ref.appliedText === next) continue
+      ref.appliedText = next
+      ref.node.content = next
+    }
+  }
+  setProp(outer, 'onSizeChange', fitHeadings)
+  setProp(outer, 'paddingTop', 1)
+  setProp(outer, 'paddingBottom', 1)
   // Fill the host dialog's panel width so the bordered surface spans every
   // panel cell; the wrapper handles the host's reserved row above it.
   setProp(outer, 'border', true)
@@ -126,14 +305,13 @@ export function createUsageDetailsModalView(context, sessionData, input) {
   setProp(header, 'justifyContent', 'space-between')
   setProp(header, 'width', '100%')
   setProp(header, 'flexShrink', 0)
-  // Leave one cell before the right border so the esc label is not flush with
-  // it, and is still a distinct clickable target.
-  setProp(header, 'paddingRight', 1)
+  setProp(header, 'paddingLeft', 2)
+  setProp(header, 'paddingRight', 2)
 
   const title = createElement('text')
   setProp(title, 'fg', context.theme?.text?.base)
+  setProp(title, 'attributes', TextAttributes.BOLD)
   insert(title, MODAL_TITLE)
-  insert(header, title)
 
   // Clearing the dialog runs the registered onClose cleanup, which also
   // releases the modal keymap layer. The esc label and the outside target
@@ -151,64 +329,51 @@ export function createUsageDetailsModalView(context, sessionData, input) {
     if (event.button === 0) dismissDialog(event)
   })
   insert(closeButton, MODAL_CLOSE_LABEL)
-  insert(header, closeButton)
-  insert(outer, header)
+  insert(header, [title, closeButton])
 
-  // The scrollbox lays out its viewport and vertical scrollbar side by side, so
-  // the box must hug the content for the scrollbar to sit beside the table
-  // instead of at the far edge of the dialog.
-  const detailsText = createMemo(() => {
+  const detailsPairs = createMemo(() => {
     revision()
     const snapshot = sessionData.getSnapshot()
     const currentModels = getModels(context)
-    const pairs = aggregateUsageDetails(snapshot?.records, currentModels)
-    if (pairs.length === 0) {
-      return 'No usage recorded'
-    }
-    return pairs.map(renderPairTable).join('\n\n')
+    return aggregateUsageDetails(snapshot?.records, currentModels)
   })
-  // Measure with the host's own width method instead of estimating non-ASCII
-  // code points conservatively, so narrow labels such as "é" do not leave a gap
-  // between the widest rendered line and the scrollbar. The extra cell holds
-  // the vertical scrollbar beside the content.
-  const contentWidth = () => {
-    const widthMethod = context.renderer.widthMethod
-    return detailsText()
-      .split('\n')
-      .reduce((max, line) => Math.max(max, measureEditText(line, { widthMethod })), 1) + 1
-  }
-  // The body hugs the content so the scrollbox scrollbar stays beside the
-  // table, while the bordered panel fills the host dialog width.
+
   const body = createElement('box')
   setProp(body, 'flexDirection', 'column')
   setProp(body, 'flexGrow', 1)
-  setProp(body, 'alignSelf', 'flex-start')
-  // Keep a long usage row inside the bordered panel in a narrower terminal.
+  setProp(body, 'width', '100%')
   setProp(body, 'maxWidth', '100%')
-  // Assigning a numeric width resets flex shrink, so restore the vertical
-  // constraint after each width update. setProp applies a plain value
-  // immediately and does not subscribe to signals: set the initial width
-  // synchronously for the first frame, then update it from an effect as usage
-  // records change.
-  const fitBody = () => {
-    setProp(body, 'width', contentWidth())
-    setProp(body, 'flexShrink', 1)
-    setProp(body, 'minHeight', 0)
-  }
-  fitBody()
-  createEffect(fitBody)
+  setProp(body, 'flexShrink', 1)
+  setProp(body, 'minHeight', 0)
 
   const scroll = createElement('scrollbox')
   setProp(scroll, 'flexGrow', 1)
+  setProp(scroll, 'width', '100%')
+  setProp(scroll, 'minHeight', 0)
   setProp(scroll, 'focused', true)
+  // ScrollBox forwards its padding to the content renderable, leaving the
+  // scrollbar at the scrollbox's right edge. The right padding is one cell
+  // because the adjacent scrollbar itself occupies the other interior cell.
+  setProp(scroll, 'paddingLeft', 2)
+  setProp(scroll, 'paddingRight', 1)
   activeScroll = scroll
 
-  const textNode = createElement('text')
-  setProp(textNode, 'fg', context.theme?.text?.base)
-  insert(textNode, detailsText)
-  insert(scroll, textNode)
+  const detailsContent = createMemo(() => {
+    const pairs = detailsPairs()
+    // This rebuild happens only for data changes, never for layout changes.
+    headingRefs.length = 0
+    if (pairs.length === 0) return [createText('No usage recorded', undefined, bodyFg)]
+
+    const content = []
+    for (const [index, pair] of pairs.entries()) {
+      content.push(...createPairContent(pair, widthMethod, measuredPanelWidth, headingRefs, bodyFg))
+      if (index < pairs.length - 1) content.push(createText(' ', undefined, bodyFg))
+    }
+    return content
+  })
+  insert(scroll, detailsContent)
   insert(body, scroll)
-  insert(outer, body)
+  insert(outer, [header, body])
 
   // The host dialog panel reserves one row above its content. Cover that row
   // with an outside-click target so a click immediately above the bordered

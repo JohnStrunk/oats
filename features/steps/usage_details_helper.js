@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { detailsFixture, message, model, usage } from './usage_details_fixture.js'
+import { detailsFixture, message, model, modelInfo, usage } from './usage_details_fixture.js'
 import { eventually, screen, startScenario, updateControl } from './sidebar_scenario_helper.js'
 import { COLS as TEST_SCREEN_COLUMNS, ROWS as TEST_SCREEN_ROWS } from './sidebar_pty_driver.js'
-import { hasDetailsModal, lineWith, locateExactLabel, locateText, markedNumbers, panelFrame, rowNumbers } from './usage_details_screen.js'
+import { displayWidth } from '../real-host-tests/terminal_screen.js'
+import { hasDetailsModal, lineWith, locateExactLabel, locateText, markedNumbers, panelFrame, rowNumbers, terminalCells } from './usage_details_screen.js'
 
 export { lineWith, markedNumbers, rowNumbers }
 
@@ -41,10 +42,345 @@ export async function assertModalTitleAtUpperLeft(world) {
 
   const titleEnd = title.column + 'Agent cost details'.length
   const width = frame.right - frame.left
-  assert.ok(title.row === frame.top + 1, `The modal title must be on the panel header's first interior row\n${text}`)
+  assert.ok(title.row === frame.top + 2, `The modal title must follow one vertical padding row inside the panel\n${text}`)
   assert.ok(title.column > frame.left && titleEnd <= frame.right,
     `The full modal title must be inside the panel border\n${text}`)
+  assert.equal(displayWidth(text.split('\n')[title.row].slice(0, title.column)), frame.left + 3,
+    `The modal title must start two horizontal padding cells inside the left panel border\n${text}`)
   assert.ok(title.column < frame.left + Math.ceil(width / 3), `The modal title must be at the panel's upper-left\n${text}`)
+}
+
+export async function assertModalPadding(world) {
+  const text = await modal(world)
+  const frame = panelFrame(text)
+  assert.ok(frame, `The usage details modal must have a bordered panel before padding is checked\n${text}`)
+
+  const title = locateText(text, 'Agent cost details')
+  assert.ok(title, `The modal title must be visible before padding is checked\n${text}`)
+  assert.equal(title.row, frame.top + 2, `One vertical terminal row must separate the title from the top border\n${text}`)
+  const titleColumn = displayWidth(text.split('\n')[title.row].slice(0, title.column))
+  assert.equal(titleColumn, frame.left + 3, `Two horizontal terminal cells must precede the title\n${text}`)
+
+  const pairIdentity = `alpha - ${model.providerID}/${model.id}`
+  const lines = text.split('\n')
+  const headingRow = lines.findIndex(line => line.includes(pairIdentity))
+  assert.ok(headingRow >= 0, `The expected pair heading must be visible\n${text}`)
+  assert.equal(displayWidth(lines[headingRow].slice(0, lines[headingRow].indexOf(pairIdentity))), frame.left + 3,
+    `Two horizontal terminal cells must precede pair content\n${text}`)
+
+  const priceRow = lineWith(text, 'Price')
+  const priceRowIndex = lines.indexOf(priceRow)
+  assert.ok(priceRowIndex >= 0, `The table's first row label must be visible before its left padding is checked\n${text}`)
+  assert.equal(displayWidth(priceRow.slice(0, priceRow.indexOf('Price'))), frame.left + 3,
+    `Two horizontal terminal cells must precede table content\n${text}`)
+
+  const closeButton = locateExactLabel(text, 'esc')
+  assert.ok(closeButton, `The modal close button must be visible before right padding is checked\n${text}`)
+  const closeButtonColumn = displayWidth(lines[closeButton.row].slice(0, closeButton.column))
+  assert.equal(closeButtonColumn + 2, frame.right - 3,
+    `Two horizontal terminal cells must follow the close button before the right border\n${text}`)
+}
+
+export async function assertModalBottomPadding(world) {
+  const text = await modal(world)
+  const frame = panelFrame(text)
+  assert.ok(frame, `The usage details modal must have a bordered panel before bottom padding is checked\n${text}`)
+  const lines = text.split('\n')
+  const bottomPadding = terminalCells(lines[frame.bottom - 1])
+  // The scrollbar is a separate edge control at the panel's rightmost interior
+  // cell; it is not part of the details content whose bottom padding is checked.
+  const contentCells = bottomPadding.slice(frame.left + 1, frame.right - 1)
+  assert.ok(contentCells.every(cell => cell === ' '),
+    `One blank terminal row must remain between the scrolled details content and the bottom border\n${text}`)
+}
+
+function terminalPosition(line, row, value) {
+  const index = line.indexOf(value)
+  assert.ok(index >= 0, `Missing rendered text "${value}" in row ${row}: ${line}`)
+  return { row, column: displayWidth(line.slice(0, index)) }
+}
+
+function textStyle(world, text, value, row = undefined) {
+  assert.equal(world.sidebarPty.screen(), text,
+    'Text and SGR attributes must be read from the same rendered PTY screen')
+  const lines = text.split('\n')
+  const rowIndex = row ?? lines.findIndex(line => line.includes(value))
+  assert.ok(rowIndex >= 0, `Missing text "${value}" before its terminal style can be checked\n${text}`)
+  const position = terminalPosition(lines[rowIndex], rowIndex, value)
+  let offset = 0
+  let firstStyle = null
+  for (const char of value) {
+    const style = world.sidebarPty.styleAt(position.row, position.column + offset)
+    if (firstStyle === null) firstStyle = style
+    else assert.deepEqual(style, firstStyle, `The rendered text "${value}" must use a consistent SGR style\n${text}`)
+    offset += displayWidth(char)
+  }
+  assert.equal(world.sidebarPty.screen(), text,
+    'The PTY screen must remain stable while its rendered SGR style is read')
+  return { position, style: firstStyle }
+}
+
+function assertEmphasizedAgainstData(world, text, emphasizedText, normalDataCell, row = undefined) {
+  const emphasized = textStyle(world, text, emphasizedText, row)
+  const normal = textStyle(world, text, normalDataCell.value, normalDataCell.row)
+  assert.notDeepEqual(emphasized.style, normal.style,
+    `The emphasized text "${emphasizedText}" must have visible SGR styling distinct from the normal data cell "${normalDataCell.value}"; actual styles were ${JSON.stringify(emphasized.style)} and ${JSON.stringify(normal.style)}\n${text}`)
+  return { emphasized, normal }
+}
+
+function firstNumericDataCell(text) {
+  const row = lineWith(text, 'Tokens')
+  const rowIndex = text.split('\n').indexOf(row)
+  const match = /\d[\d,]*(?:\.\d+)?/.exec(row)
+  assert.ok(match, `A numeric Token cell must be visible as the normal-data style control\n${text}`)
+  assert.ok(rowIndex >= 0, `A Tokens row must be visible as the normal-data style control\n${text}`)
+  return { value: match[0], row: rowIndex }
+}
+
+export async function assertModalTitleEmphasized(world) {
+  const text = await modal(world)
+  assertEmphasizedAgainstData(world, text, 'Agent cost details', firstNumericDataCell(text))
+}
+
+export async function assertPairHeadingsEmphasized(world) {
+  const text = await modal(world)
+  const lines = text.split('\n')
+  const normalCell = firstNumericDataCell(text)
+  const normal = textStyle(world, text, normalCell.value, normalCell.row)
+  const pairRows = lines.map((line, row) => ({ line, row }))
+    .filter(({ line }) => line.includes('alpha - ') && /\$\d/.test(line))
+  assert.ok(pairRows.length > 0, `At least one pair heading must be visible before its style is checked\n${text}`)
+  for (const { line, row } of pairRows) {
+    const identityStart = line.indexOf('alpha - ')
+    const costMatch = /\$\d[\d,]*(?:\.\d+)?e?/.exec(line)
+    assert.ok(costMatch, `Each pair heading must show its reported cost\n${text}`)
+    const identity = line.slice(identityStart, costMatch.index).trimEnd()
+    const identityStyle = textStyle(world, text, identity, row)
+    const costStyle = textStyle(world, text, costMatch[0], row)
+    assert.notDeepEqual(identityStyle.style, normal.style,
+      `Pair identity "${identity}" must stand out from normal data\n${text}`)
+    assert.notDeepEqual(costStyle.style, normal.style,
+      `Pair reported cost "${costMatch[0]}" must stand out from normal data\n${text}`)
+  }
+}
+
+export async function assertTableHeadersEmphasized(world) {
+  const text = await modal(world)
+  const lines = text.split('\n')
+  const normalCell = firstNumericDataCell(text)
+  const normal = textStyle(world, text, normalCell.value, normalCell.row).style
+  const columnHeaderRow = lines.findIndex(line => /input\s+output\s+cache write\s+cache read/i.test(line))
+  assert.ok(columnHeaderRow >= 0, `The table's column-heading row must be visible before its styles are checked\n${text}`)
+  for (const label of ['input', 'output', 'cache write', 'cache read']) {
+    const header = textStyle(world, text, label, columnHeaderRow)
+    assert.notDeepEqual(header.style, normal,
+      `Table heading/row label "${label}" must have visible SGR styling distinct from the normal numeric data cell; actual styles were ${JSON.stringify(header.style)} and ${JSON.stringify(normal)}\n${text}`)
+  }
+  for (const label of ['Price', 'Tokens', 'Cost']) {
+    const row = lineWith(text, label)
+    const rowIndex = lines.indexOf(row)
+    assert.ok(rowIndex >= 0, `The table's ${label} row label must be visible\n${text}`)
+    const header = textStyle(world, text, label, rowIndex)
+    assert.notDeepEqual(header.style, normal,
+      `Table heading/row label "${label}" must have visible SGR styling distinct from the normal numeric data cell; actual styles were ${JSON.stringify(header.style)} and ${JSON.stringify(normal)}\n${text}`)
+  }
+}
+
+export async function assertPairHeadingAlignment(world) {
+  const text = await modal(world)
+  const frame = panelFrame(text)
+  assert.ok(frame, `The usage details modal must have a bordered panel before heading alignment is checked\n${text}`)
+  const lines = text.split('\n')
+  const headingRows = lines.map((line, row) => ({ line, row }))
+    .filter(({ line }) => line.includes('alpha - ') && /\$\d/.test(line))
+  assert.ok(headingRows.length > 0, `At least one pair heading must be visible\n${text}`)
+
+  for (const { line, row } of headingRows) {
+    const identityStart = line.indexOf('alpha - ')
+    const costMatch = /\$\d[\d,]*(?:\.\d+)?e?/.exec(line)
+    assert.ok(costMatch, `Each pair heading must show its reported cost\n${text}`)
+    const identityColumn = displayWidth(line.slice(0, identityStart))
+    const costStart = displayWidth(line.slice(0, costMatch.index))
+    const costEnd = costStart + displayWidth(costMatch[0]) - 1
+    assert.equal(identityColumn, frame.left + 3,
+      `Pair agent/model identity on row ${row} must be left-justified at the padded panel edge\n${text}`)
+    assert.equal(costEnd, frame.right - 3,
+      `Pair reported cost on row ${row} must be right-justified at the padded panel edge\n${text}`)
+    assert.ok(identityColumn < costStart, `Pair identity must precede its right-justified reported cost\n${text}`)
+  }
+}
+
+export function assertOverlongPairHeading(text, { identityPrefix, fullIdentity, reportedCost }) {
+  const frame = panelFrame(text)
+  assert.ok(frame, `The usage details modal must have a bordered panel before overflow alignment is checked\n${text}`)
+  const frameTop = frame.lines[frame.top]
+  const frameLeftColumn = displayWidth(frameTop.slice(0, frame.left))
+  const frameRightColumn = displayWidth(frameTop.slice(0, frame.right))
+
+  const headingRows = text.split('\n').map((line, row) => ({ line, row }))
+    .filter(({ line }) => {
+      const identityStart = line.indexOf(identityPrefix)
+      const costStart = line.indexOf(reportedCost)
+      return identityStart >= 0 && costStart > identityStart &&
+        displayWidth(line.slice(0, identityStart)) === frameLeftColumn + 3
+    })
+  assert.equal(headingRows.length, 1,
+    `The identity and complete reported cost must appear together on exactly one heading row\n${text}`)
+
+  const { line, row } = headingRows[0]
+  const identityStart = line.indexOf(identityPrefix)
+  const costStartIndex = line.indexOf(reportedCost)
+  const visibleIdentity = line.slice(identityStart, costStartIndex).replace(/ +$/u, '')
+  assert.ok(visibleIdentity.endsWith('…'),
+    `The overlong identity on heading row ${row} must end with the Unicode ellipsis\n${text}`)
+  const visibleIdentityPrefix = visibleIdentity.slice(0, -1)
+  assert.ok(fullIdentity.startsWith(visibleIdentityPrefix),
+    `The visible identity before the ellipsis must be a prefix of the full identity\n${text}`)
+  assert.ok(!visibleIdentity.includes(fullIdentity),
+    `The full overlong identity must not be rendered in the heading label\n${text}`)
+  assert.equal(displayWidth('…'), 1, 'The Unicode ellipsis used by the heading must occupy one terminal cell')
+
+  const identityColumn = displayWidth(line.slice(0, identityStart))
+  const visibleIdentityWidth = displayWidth(visibleIdentity)
+  const costColumn = displayWidth(line.slice(0, costStartIndex))
+  const costEnd = costColumn + displayWidth(reportedCost) - 1
+  const availableIdentityWidth = costColumn - identityColumn - 2
+
+  assert.equal(identityColumn, frameLeftColumn + 3,
+    `The ellipsized identity on heading row ${row} must start at the padded left edge\n${text}`)
+  assert.ok(displayWidth(fullIdentity) > availableIdentityWidth,
+    `The fixture identity must exceed the available terminal-cell width\n${text}`)
+  assert.ok(visibleIdentityWidth <= availableIdentityWidth,
+    `The visible identity must fit before the two-cell gap and right-justified cost\n${text}`)
+  assert.ok(visibleIdentityWidth >= availableIdentityWidth - 1,
+    `The visible identity must use all but at most one cell of its available terminal width\n${text}`)
+  assert.ok(costColumn >= identityColumn + visibleIdentityWidth + 2,
+    `The ellipsized identity must leave the existing two-cell gap before its reported cost\n${text}`)
+  assert.equal(costEnd, frameRightColumn - 3,
+    `The reported cost on heading row ${row} must remain right-justified inside the panel padding\n${text}`)
+}
+
+export function panelHasPairHeadingPrefix(text, identityPrefix) {
+  const frame = panelFrame(text)
+  if (!frame) return false
+  const frameLeftColumn = displayWidth(frame.lines[frame.top].slice(0, frame.left))
+  return text.split('\n').some(line => {
+    const identityStart = line.indexOf(identityPrefix)
+    return identityStart >= 0 && displayWidth(line.slice(0, identityStart)) === frameLeftColumn + 3
+  })
+}
+
+export async function refreshPairIdentity(world, { agent, providerID, modelID, sequence }) {
+  await updateControl(world, fixture => {
+    fixture.messages[fixture.rootSession] = [
+      message(`generated-identity-${sequence}`, agent, { providerID, id: modelID }, 1),
+    ]
+    fixture.messages.ses_oats_child = []
+    fixture.models = [modelInfo(providerID, modelID)]
+    fixture.events.push({
+      id: `generated-identity-refresh-${sequence}-${fixture.events.length}`,
+      type: 'session.moved',
+      data: { sessionID: fixture.rootSession },
+    })
+  })
+}
+
+export function formattedCount(value) {
+  return value.toLocaleString('en-US')
+}
+
+function numericFields(line, label) {
+  const labelMatch = new RegExp(`^\\s*[│|]?\\s*${label}\\b`, 'i').exec(line)
+  assert.ok(labelMatch, `Missing ${label} row: ${line}`)
+  const suffixStart = labelMatch.index + labelMatch[0].length
+  const fields = []
+  for (const match of line.slice(suffixStart).matchAll(/(\$?\d[\d,]*(?:\.\d+)?)(e?)/g)) {
+    const start = suffixStart + match.index
+    const number = match[1]
+    fields.push({
+      value: number,
+      marker: match[2],
+      numericEnd: displayWidth(line.slice(0, start + number.length)) - 1,
+    })
+  }
+  return fields
+}
+
+export function assertNumericTableAlignment(text, values, incompleteMask) {
+  const lines = text.split('\n')
+  const frame = panelFrame(text)
+  assert.ok(frame, `The numeric usage table must be enclosed by the details panel before alignment is checked\n${text}`)
+  const headerRow = lines.findIndex(line => /input\s+output\s+cache write\s+cache read/i.test(line))
+  assert.ok(headerRow >= 0, `The table's four category headings must be visible before numeric alignment is checked\n${text}`)
+  const headings = ['input', 'output', 'cache write', 'cache read']
+  const headingStarts = headings.map(label => {
+    const column = lines[headerRow].indexOf(label)
+    assert.ok(column >= 0, `Missing table heading "${label}"\n${text}`)
+    return displayWidth(lines[headerRow].slice(0, column))
+  })
+  const rows = Object.fromEntries(['Price', 'Tokens', 'Cost'].map(label => [label, lineWith(text, label)]))
+  const fields = Object.fromEntries(Object.entries(rows).map(([label, line]) => [label, numericFields(line, label)]))
+  for (const label of ['Price', 'Tokens', 'Cost']) {
+    assert.equal(fields[label].length, 4, `The ${label} row must expose four numeric category cells\n${text}`)
+  }
+
+  const cellsByRow = Object.fromEntries(Object.entries(rows).map(([label, line]) => [label, terminalCells(line)]))
+  for (let index = 0; index < 4; index++) {
+    const price = fields.Price[index]
+    const tokens = fields.Tokens[index]
+    const cost = fields.Cost[index]
+    const expectedMarker = (incompleteMask & (1 << index)) === 0 ? '' : 'e'
+    assert.equal(tokens.value.replaceAll(',', ''), String(values[index]), `Token category ${index} must show its generated value\n${text}`)
+    assert.equal(tokens.marker, expectedMarker, `Token category ${index} must have the expected completeness marker\n${text}`)
+    assert.equal(price.marker, '', `Price category ${index} must not acquire an incompleteness marker\n${text}`)
+    assert.equal(cost.marker, 'e', `Estimated cost category ${index} must retain its trailing e marker\n${text}`)
+    assert.equal(price.numericEnd, cost.numericEnd,
+      `Price and estimated cost numbers in category ${index} must share a right-aligned numeric edge\n${text}`)
+    assert.equal(tokens.numericEnd, cost.numericEnd,
+      `Complete/partial token number in category ${index} must share the estimated-cost numeric edge\n${text}`)
+
+    const markerColumn = cost.numericEnd + 1
+    assert.ok(markerColumn >= headingStarts[index],
+      `Category ${index} numeric data must be positioned under its heading\n${text}`)
+    assert.ok(index === 3 || markerColumn < headingStarts[index + 1],
+      `Category ${index} numeric data must end before the next category heading\n${text}`)
+    assert.ok(index === 0 || markerColumn > fields.Cost[index - 1].numericEnd + 1,
+      `Each numeric category must retain a distinct ordered column edge\n${text}`)
+    assert.ok(markerColumn <= frame.right - 3,
+      `Category ${index} and its marker cell must remain inside the two-cell right panel inset\n${text}`)
+    assert.equal(cellsByRow.Price[markerColumn], ' ', `Price category ${index} must reserve a blank marker cell\n${text}`)
+    assert.equal(cellsByRow.Tokens[markerColumn], expectedMarker || ' ',
+      `Token category ${index} must keep the optional e marker in its reserved cell\n${text}`)
+    assert.equal(cellsByRow.Cost[markerColumn], 'e', `Estimated cost category ${index} must use the reserved marker cell\n${text}`)
+  }
+}
+
+export async function refreshTokenAlignment(world, values, incompleteMask, sequence) {
+  const agent = `align-${sequence}`
+  const completeTokens = {
+    input: values[0],
+    output: values[1],
+    reasoning: 0,
+    cache: { write: values[2], read: values[3] },
+  }
+  const partialTokens = {
+    input: incompleteMask & 1 ? null : 0,
+    output: incompleteMask & 2 ? null : 0,
+    reasoning: incompleteMask & 2 ? null : 0,
+    cache: {
+      write: incompleteMask & 4 ? null : 0,
+      read: incompleteMask & 8 ? null : 0,
+    },
+  }
+  await updateControl(world, fixture => {
+    fixture.messages[fixture.rootSession] = [
+      message(`alignment-complete-${sequence}`, agent, model, 1, completeTokens),
+      message(`alignment-partial-${sequence}`, agent, model, 1, partialTokens),
+    ]
+    fixture.messages.ses_oats_child = []
+    fixture.events.push({ id: `alignment-refresh-${fixture.events.length}`, type: 'session.moved', data: { sessionID: fixture.rootSession } })
+  })
+  return agent
 }
 
 export async function assertEscButtonAtUpperRight(world) {
@@ -56,9 +392,10 @@ export async function assertEscButtonAtUpperRight(world) {
   assert.ok(frame, `The usage details panel must have a visible border before the esc position is checked\n${text}`)
 
   const width = frame.right - frame.left
-  assert.ok(button.row === frame.top + 1, `The esc button must be on the panel header's first interior row\n${text}`)
+  assert.equal(button.row, frame.top + 2, `The esc button must follow one vertical padding row inside the panel\n${text}`)
   assert.ok(button.column >= frame.left + Math.floor(width * 2 / 3), `The esc button must be at the panel's upper-right\n${text}`)
-  assert.ok(button.column + 3 < frame.right, `The esc button must fit inside the panel border\n${text}`)
+  assert.equal(displayWidth(text.split('\n')[button.row].slice(0, button.column)) + 2, frame.right - 3,
+    `The esc button must leave two horizontal padding cells before the right border\n${text}`)
 }
 
 export async function clickEscButton(world) {

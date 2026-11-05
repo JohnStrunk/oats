@@ -1,6 +1,8 @@
 // Pure terminal-screen parsing for usage details. This module intentionally has
 // no Cucumber hooks or process state so unit tests can import it directly.
 
+import { displayWidth } from '../real-host-tests/terminal_screen.js'
+
 const BORDER_TOP_LEFT = new Set(['┌', '╭', '┏', '╔', '╒', '╓', '+'])
 const BORDER_TOP_RIGHT = new Set(['┐', '╮', '┓', '╗', '╕', '╖', '+'])
 const BORDER_BOTTOM_LEFT = new Set(['└', '╰', '┗', '╚', '╘', '╙', '+'])
@@ -48,7 +50,8 @@ function hasBottomBorder(line, left, right) {
 
 function hasVerticalSides(lines, top, bottom, left, right) {
   for (let y = top + 1; y < bottom; y++) {
-    if (!BORDER_VERTICAL.has(lines[y][left]) || !BORDER_VERTICAL.has(lines[y][right])) return false
+    const cells = terminalCells(lines[y])
+    if (!BORDER_VERTICAL.has(cells[left]) || !BORDER_VERTICAL.has(cells[right])) return false
   }
   return true
 }
@@ -73,7 +76,7 @@ function hasUsageDetailsTable(text) {
 }
 
 function frameInside(lines, top, bottom, left, right) {
-  return lines.slice(top + 1, bottom).map(line => line.slice(left + 1, right)).join('\n')
+  return lines.slice(top + 1, bottom).map(line => terminalCells(line).slice(left + 1, right).join('')).join('\n')
 }
 
 function frameFrom(lines, top, left, acceptFrame) {
@@ -156,4 +159,21 @@ export function rowNumbers(text, label) {
 export function markedNumbers(text, label) {
   const values = lineWith(text, label).replace(new RegExp(`.*?\\b${escapeRegExp(label)}\\b`, 'i'), '')
   return (values.match(/(?:e\s*\$?-?\d[\d,]*(?:\.\d+)?|\$?-?\d[\d,]*(?:\.\d+)?\s*e)/g) ?? []).length
+}
+
+// Convert a rendered PTY row back to terminal cells. The screen parser joins a
+// wide glyph and its continuation cell into one JavaScript string, so indexes
+// and display columns differ for CJK text.
+export function terminalCells(line) {
+  const cells = []
+  for (const char of line) {
+    const width = displayWidth(char)
+    if (width === 0) {
+      if (cells.length > 0) cells[cells.length - 1] += char
+      continue
+    }
+    cells.push(char)
+    if (width === 2) cells.push('')
+  }
+  return cells
 }
