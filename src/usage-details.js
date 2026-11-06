@@ -48,6 +48,17 @@ const ELLIPSIS = '…'
 // pre-measurement width so the first frame cannot lay out an unbounded heading.
 const INITIAL_PANEL_WIDTH = 88
 
+// Semantic theme-token chains for the modal's three styled elements
+// (issue #64). The modal title resolves an amber warning tone, each pair
+// title a green success tone, and the table headers a muted tone, each with
+// one fallback token for themes that lack the primary one. No fixed palette:
+// the first chain candidate that renders visibly and stays distinct from the
+// other elements and from ordinary numeric data wins, so custom themes keep
+// working.
+const MODAL_TITLE_TOKENS = ['text.feedback.warning.base', 'hue.yellow.100']
+const PAIR_TITLE_TOKENS = ['text.feedback.success.base', 'hue.green.100']
+const TABLE_HEADER_TOKENS = ['text.muted', 'border.base']
+
 // The host backdrop skips its mouse-up dismissal while text is selected, so
 // ending a drag-selection keeps the highlight instead of closing the modal.
 function hasSelectedText(context) {
@@ -87,11 +98,17 @@ function sameResolvedColor(left, right) {
     leftChannels.every((channel, index) => channel === rightChannels[index])
 }
 
-function distinctHeadingStyle(theme, raisedPreference, bodyFg) {
-  let surface
+// The host theme exposes per-surface tokens through a `surface` accessor
+// that can throw for unsupported surface names, so guard the call.
+function dialogSurface(theme) {
   try {
-    if (typeof theme?.surface === 'function') surface = theme.surface('dialog')
+    if (typeof theme?.surface === 'function') return theme.surface('dialog')
   } catch {}
+  return undefined
+}
+
+function distinctHeadingStyle(theme, raisedPreference, bodyFg) {
+  const surface = dialogSurface(theme)
 
   const surfaceRaised = surface?.background?.raised
   const rootRaised = theme?.background?.raised
@@ -115,6 +132,70 @@ function distinctHeadingStyle(theme, raisedPreference, bodyFg) {
   }
 
   return { fg: normalFg, bg: undefined }
+}
+
+// Resolve a dotted semantic theme-token path such as
+// "text.feedback.warning.base" against the live theme object. Every hop is
+// guarded because host themes are reactive objects that can throw when a
+// theme does not define a path.
+function themeTokenValue(theme, path) {
+  let node = theme
+  for (const part of path.split('.')) {
+    if (node === undefined || node === null) return undefined
+    try {
+      node = node[part]
+    } catch {
+      return undefined
+    }
+  }
+  return node ?? undefined
+}
+
+// Resolve the modal's three styled elements — the bold modal title, the bold
+// per-pair table titles, and the normal-weight table headers — from their
+// semantic token chains (issue #64). Elements resolve in priority order
+// (title, pair titles, then table headers); each takes the first chain
+// candidate that renders visibly, contrasts with the dialog surface and the
+// body foreground, and does not equal a color already assigned to an earlier
+// element. That keeps every element distinct from ordinary numeric data and
+// pairwise distinct from the other two on any theme. An element whose whole
+// chain fails (a degenerate theme) degrades to the raised-surface heuristic,
+// which self-checks visibility and distinctness rather than rendering
+// invisible text.
+function resolveHeadingStyles(theme, bodyFg) {
+  const surface = dialogSurface(theme)
+  const dialogBackground = surface?.background?.base ?? theme?.background?.raised?.base
+  const usedColors = []
+
+  const chainForeground = (tokenPaths) => {
+    const forbidden = [dialogBackground, bodyFg, ...usedColors]
+    for (const path of tokenPaths) {
+      const candidate = themeTokenValue(theme, path)
+      if (!hasVisibleColor(candidate)) continue
+      if (forbidden.some(color => sameResolvedColor(color, candidate))) continue
+      usedColors.push(candidate)
+      return candidate
+    }
+    return undefined
+  }
+
+  const titleFg = chainForeground(MODAL_TITLE_TOKENS)
+  const pairFg = chainForeground(PAIR_TITLE_TOKENS)
+  const headerFg = chainForeground(TABLE_HEADER_TOKENS)
+
+  return {
+    // The raised-surface fallbacks keep the pre-issue-64 preferences: the
+    // title prefers max, while pair titles and table headers prefer high.
+    modalTitle: titleFg !== undefined
+      ? { fg: titleFg, bg: undefined, attributes: TextAttributes.BOLD }
+      : { ...distinctHeadingStyle(theme, ['max', 'high'], bodyFg), attributes: TextAttributes.BOLD },
+    pairTitle: pairFg !== undefined
+      ? { fg: pairFg, bg: undefined, attributes: TextAttributes.BOLD }
+      : { ...distinctHeadingStyle(theme, ['high', 'max'], bodyFg), attributes: TextAttributes.BOLD },
+    tableHeader: headerFg !== undefined
+      ? { fg: headerFg, bg: undefined, attributes: undefined }
+      : { ...distinctHeadingStyle(theme, ['high', 'max'], bodyFg), attributes: undefined },
+  }
 }
 
 function measuredWidth(text, widthMethod) {
@@ -209,7 +290,7 @@ function createTableHeader(layout, widthMethod, headingStyle) {
     parts.push(padRight(column.label, column.width, widthMethod))
     if (index < layout.columns.length - 1) parts.push(' '.repeat(TABLE_COLUMN_GAP))
   }
-  return createText(parts, TextAttributes.BOLD, headingStyle.fg, headingStyle.bg)
+  return createText(parts, headingStyle.attributes, headingStyle.fg, headingStyle.bg)
 }
 
 function createTableRow(row, layout, widthMethod, bodyFg, headingStyle) {
@@ -230,7 +311,7 @@ function createTableRow(row, layout, widthMethod, bodyFg, headingStyle) {
     headingStyle.bg === undefined
       ? padRight(row.label, layout.rowLabelWidth, widthMethod)
       : row.label,
-    TextAttributes.BOLD,
+    headingStyle.attributes,
     headingStyle.fg,
     headingStyle.bg,
   )
@@ -248,10 +329,10 @@ function createTableRow(row, layout, widthMethod, bodyFg, headingStyle) {
   return rowBox
 }
 
-function createPairContent(pair, widthMethod, panelWidth, headingRefs, bodyFg, headingStyle) {
+function createPairContent(pair, widthMethod, panelWidth, headingRefs, bodyFg, pairStyle, tableHeaderStyle) {
   const identity = `${pair.agentDisplay} - ${pair.modelDisplay}`
   const appliedText = pairHeadingText(identity, pair.reportedCost, widthMethod, panelWidth)
-  const heading = createText(appliedText, TextAttributes.BOLD, headingStyle.fg, headingStyle.bg)
+  const heading = createText(appliedText, pairStyle.attributes, pairStyle.fg, pairStyle.bg)
   // Keep a stable reference so layout can refit this heading in place instead
   // of replacing scrollbox children from inside onSizeChange.
   headingRefs.push({ node: heading, identity, reportedCost: pair.reportedCost, appliedText })
@@ -259,8 +340,8 @@ function createPairContent(pair, widthMethod, panelWidth, headingRefs, bodyFg, h
   const layout = tableLayout(pair, widthMethod)
   return [
     heading,
-    createTableHeader(layout, widthMethod, headingStyle),
-    ...layout.rows.map((row) => createTableRow(row, layout, widthMethod, bodyFg, headingStyle)),
+    createTableHeader(layout, widthMethod, tableHeaderStyle),
+    ...layout.rows.map((row) => createTableRow(row, layout, widthMethod, bodyFg, tableHeaderStyle)),
   ]
 }
 
@@ -330,9 +411,10 @@ export function createUsageDetailsModalView(context, sessionData, input) {
   const [revision, setRevision] = createSignal(0, { equals: false })
   const widthMethod = context.renderer?.widthMethod
   const bodyFg = context.theme?.text?.base
-  // The title prefers max, while detail headings prefer high; each falls back to the other.
-  const titleStyle = distinctHeadingStyle(context?.theme, ['max', 'high'], bodyFg)
-  const detailsHeadingStyle = distinctHeadingStyle(context?.theme, ['high', 'max'], bodyFg)
+  // The three styled elements each resolve their own colors and text
+  // attributes: a bold title and bold pair titles from feedback/hue tokens,
+  // and normal-weight table headers from muted tokens, pairwise distinct.
+  const { modalTitle: titleStyle, pairTitle: pairStyle, tableHeader: tableHeaderStyle } = resolveHeadingStyles(context?.theme, bodyFg)
   // Layout width is intentionally a plain variable, not a signal: changing it
   // must not invalidate the scrollbox's reactive children during onSizeChange.
   let measuredPanelWidth = 0
@@ -378,7 +460,7 @@ export function createUsageDetailsModalView(context, sessionData, input) {
   setProp(header, 'paddingLeft', 2)
   setProp(header, 'paddingRight', 2)
 
-  const title = createText(MODAL_TITLE, TextAttributes.BOLD, titleStyle.fg, titleStyle.bg)
+  const title = createText(MODAL_TITLE, titleStyle.attributes, titleStyle.fg, titleStyle.bg)
 
   // Clearing the dialog runs the registered onClose cleanup, which also
   // releases the modal keymap layer. The esc label and the outside target
@@ -439,7 +521,8 @@ export function createUsageDetailsModalView(context, sessionData, input) {
         measuredPanelWidth,
         headingRefs,
         bodyFg,
-        detailsHeadingStyle,
+        pairStyle,
+        tableHeaderStyle,
       ))
       if (index < pairs.length - 1) content.push(createText(' ', undefined, bodyFg))
     }
