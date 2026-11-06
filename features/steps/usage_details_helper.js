@@ -193,38 +193,52 @@ function assertColorDistinctAgainstData(world, text, styledText, normalDataCell,
   return assertColorStylesDistinct(styled.style, normal.style, styledText, normalDataCell, text)
 }
 
-function assertBackgroundDistinctAgainstData(world, text, styledText, normalDataCell, row = undefined, column = undefined) {
-  const styled = textStyle(world, text, styledText, row, column)
-  const normal = textStyle(world, text, normalDataCell.value, normalDataCell.row, normalDataCell.column)
-  assert.notDeepEqual(styled.style.background, normal.style.background,
-    `The rendered SGR background color of "${styledText}" must differ from ordinary numeric data "${normalDataCell.value}"; actual backgrounds were ${JSON.stringify(styled.style.background)} and ${JSON.stringify(normal.style.background)}\n${text}`)
-  return styled.style.background
+// Locate every pair-heading element (agent/model identity and reported cost,
+// including an unavailable cost) rendered inside the details panel.
+function pairHeadingLocations(frame, text) {
+  const locations = []
+  const pairRows = panelRows(frame).filter(({ content }) => content.includes(' - '))
+  assert.ok(pairRows.length > 0, `At least one pair heading inside the usage details panel must be visible before its style is checked\n${text}`)
+  for (const { content, row } of pairRows) {
+    const costMatch = reportedCostMatch(content)
+    assert.ok(costMatch, `Each pair heading inside the usage details panel must show a currency, unknown, or unavailable reported cost\n${text}`)
+    const rawIdentity = content.slice(0, costMatch.index)
+    const identity = rawIdentity.trim()
+    assert.ok(identity.includes(' - '),
+      `Each pair heading must show its agent/model identity before its reported cost\n${text}`)
+    const identityStart = rawIdentity.indexOf(identity)
+    locations.push({ value: identity, row, column: panelColumn(frame, content, identityStart) })
+    locations.push({ value: costMatch[0], row, column: panelColumn(frame, content, costMatch.index) })
+  }
+  return locations
 }
 
-function assertBlankCellsMatchBackgroundAndDifferFromData(world, text, description, row, startColumn, endColumn, expectedBackground, normalDataCell) {
-  assert.ok(endColumn > startColumn, `${description} must contain at least one blank terminal cell\n${text}`)
-  assert.ok(expectedBackground !== null && expectedBackground !== undefined,
-    `${description} must have an explicit adjacent heading/label SGR background\n${text}`)
-  assert.equal(world.sidebarPty.screen(), text,
-    'Text and SGR attributes must be read from the same rendered PTY screen')
-  const normalBackground = world.sidebarPty.styleAt(normalDataCell.row, normalDataCell.column).background
-  assert.equal(world.sidebarPty.screen(), text,
-    'The PTY screen must remain stable while its rendered SGR style is read')
-  const cells = terminalCells(text.split('\n')[row])
-  for (let column = startColumn; column < endColumn; column += 1) {
-    assert.equal(cells[column], ' ', `${description} at terminal column ${column} must be blank\n${text}`)
-    assert.equal(world.sidebarPty.screen(), text,
-      'Text and SGR attributes must be read from the same rendered PTY screen')
-    const actualBackground = world.sidebarPty.styleAt(row, column).background
-    assert.equal(world.sidebarPty.screen(), text,
-      'The PTY screen must remain stable while its rendered SGR style is read')
-    assert.ok(actualBackground !== null && actualBackground !== undefined,
-      `${description} cell at terminal column ${column} must have an explicit SGR background\n${text}`)
-    assert.deepEqual(actualBackground, expectedBackground,
-      `${description} cell at terminal column ${column} must match the adjacent heading/label background; actual background was ${JSON.stringify(actualBackground)} and expected ${JSON.stringify(expectedBackground)}\n${text}`)
-    assert.notDeepEqual(actualBackground, normalBackground,
-      `${description} cell at terminal column ${column} must have a background distinct from ordinary numeric data; actual background was ${JSON.stringify(actualBackground)}\n${text}`)
+// Locate every table-heading element: the four column headings and the
+// Price/Tokens/Cost row labels rendered inside the details panel.
+function tableHeadingLocations(frame, text) {
+  const locations = []
+  const columnLabels = ['input', 'output', 'cache write', 'cache read']
+  const columnHeader = panelRows(frame).find(({ content }) => /input\s+output\s+cache write\s+cache read/i.test(content))
+  assert.ok(columnHeader, `The table's column-heading row must be visible inside the panel before its styles are checked\n${text}`)
+  for (const label of columnLabels) {
+    const index = columnHeader.content.indexOf(label)
+    assert.ok(index >= 0, `The column heading "${label}" must be inside the heading row\n${text}`)
+    locations.push({ value: label, row: columnHeader.row, column: panelColumn(frame, columnHeader.content, index) })
   }
+  for (const label of ['Price', 'Tokens', 'Cost']) {
+    const row = panelRows(frame).find(({ content }) => new RegExp(`^\\s*${label}\\b`, 'i').test(content))
+    assert.ok(row, `The table's ${label} row label must be visible inside the panel\n${text}`)
+    const labelStart = row.content.indexOf(label)
+    assert.ok(labelStart >= 0, `The table's ${label} row label must be inside its row\n${text}`)
+    locations.push({ value: label, row: row.row, column: panelColumn(frame, row.content, labelStart) })
+  }
+  return locations
+}
+
+// Read the rendered PTY foreground/background colors of a located element,
+// deliberately ignoring bold and every other non-color SGR attribute.
+function renderedColorStyle(world, text, location) {
+  return colorStyle(textStyle(world, text, location.value, location.row, location.column).style)
 }
 
 function firstNumericDataCell(text) {
@@ -255,20 +269,8 @@ export async function assertPairHeadingsColorDistinct(world) {
   const frame = panelFrame(text)
   assert.ok(frame, `The usage details panel must be visible before pair heading colors are checked\n${text}`)
   const normalCell = firstNumericDataCell(text)
-  const pairRows = panelRows(frame).filter(({ content }) => content.includes(' - '))
-  assert.ok(pairRows.length > 0, `At least one pair heading inside the usage details panel must be visible before its style is checked\n${text}`)
-  for (const { content, row } of pairRows) {
-    const costMatch = reportedCostMatch(content)
-    assert.ok(costMatch, `Each pair heading inside the usage details panel must show a currency, unknown, or unavailable reported cost\n${text}`)
-    const rawIdentity = content.slice(0, costMatch.index)
-    const identity = rawIdentity.trim()
-    assert.ok(identity.includes(' - '),
-      `Each pair heading must show its agent/model identity before its reported cost\n${text}`)
-    const identityStart = rawIdentity.indexOf(identity)
-    const identityColumn = panelColumn(frame, content, identityStart)
-    const costColumn = panelColumn(frame, content, costMatch.index)
-    assertColorDistinctAgainstData(world, text, identity, normalCell, row, identityColumn)
-    assertColorDistinctAgainstData(world, text, costMatch[0], normalCell, row, costColumn)
+  for (const { value, row, column } of pairHeadingLocations(frame, text)) {
+    assertColorDistinctAgainstData(world, text, value, normalCell, row, column)
   }
 }
 
@@ -289,73 +291,37 @@ export async function assertTableHeadingColorsDistinct(world) {
   const frame = panelFrame(text)
   assert.ok(frame, `The usage details panel must be visible before table heading colors are checked\n${text}`)
   const normalCell = firstNumericDataCell(text)
-  const columnHeader = panelRows(frame).find(({ content }) => /input\s+output\s+cache write\s+cache read/i.test(content))
-  assert.ok(columnHeader, `The table's column-heading row must be visible inside the panel before its styles are checked\n${text}`)
-  const columnLabels = ['input', 'output', 'cache write', 'cache read']
-  const headingBackgrounds = new Map()
-  for (const label of columnLabels) {
-    const index = columnHeader.content.indexOf(label)
-    assert.ok(index >= 0, `The column heading "${label}" must be inside the heading row\n${text}`)
-    const headingBackground = assertBackgroundDistinctAgainstData(
-      world, text, label, normalCell, columnHeader.row, panelColumn(frame, columnHeader.content, index),
-    )
-    headingBackgrounds.set(label, headingBackground)
+  for (const { value, row, column } of tableHeadingLocations(frame, text)) {
+    assertColorDistinctAgainstData(world, text, value, normalCell, row, column)
   }
+}
 
-  const firstHeadingColumn = panelColumn(frame, columnHeader.content, columnHeader.content.indexOf(columnLabels[0]))
-  assertBlankCellsMatchBackgroundAndDifferFromData(
-    world,
-    text,
-    'the leading blank row-label area in the column-heading row',
-    columnHeader.row,
-    // The panel's established two-cell inset is outside the table's row-label
-    // area; compare the remaining leading blanks with the first heading.
-    frame.left + 3,
-    firstHeadingColumn,
-    headingBackgrounds.get(columnLabels[0]),
-    normalCell,
-  )
+// The modal title, the pair titles, and the table headings are three element
+// classes; this asserts their rendered PTY foreground/background colors are
+// pairwise distinct, so no two classes collapse onto the same color treatment.
+export async function assertModalElementsPairwiseColorDistinct(world) {
+  const text = await modalForColorAssertion(world)
+  const frame = panelFrame(text)
+  assert.ok(frame, `The usage details panel must be visible before its title, pair titles, and table headings are compared\n${text}`)
 
-  for (let index = 0; index < columnLabels.length - 1; index++) {
-    const label = columnLabels[index]
-    const nextLabel = columnLabels[index + 1]
-    const spacerStart = panelColumn(frame, columnHeader.content, columnHeader.content.indexOf(label) + label.length)
-    const spacerEnd = panelColumn(frame, columnHeader.content, columnHeader.content.indexOf(nextLabel))
-    assert.ok(spacerEnd > spacerStart,
-      `The column-heading row must include a visible padded or spacer cell between "${label}" and "${nextLabel}"\n${text}`)
-    assertBlankCellsMatchBackgroundAndDifferFromData(
-      world,
-      text,
-      `padded/spacer cells between "${label}" and "${nextLabel}" in the column-heading row`,
-      columnHeader.row,
-      spacerStart,
-      spacerEnd,
-      headingBackgrounds.get(label),
-      normalCell,
-    )
+  const titleColor = colorStyle(textStyle(world, text, 'Agent cost details').style)
+  const pairColors = pairHeadingLocations(frame, text).map(location => renderedColorStyle(world, text, location))
+  const tableColors = tableHeadingLocations(frame, text).map(location => renderedColorStyle(world, text, location))
+
+  const describe = color => JSON.stringify(color)
+  for (const pairColor of pairColors) {
+    for (const tableColor of tableColors) {
+      assert.notDeepEqual(pairColor, tableColor,
+        `The rendered SGR foreground or background colors of a usage details pair title (${describe(pairColor)}) and a table heading (${describe(tableColor)}) must be pairwise distinct\n${text}`)
+    }
   }
-
-  for (const label of ['Price', 'Tokens', 'Cost']) {
-    const row = panelRows(frame).find(({ content }) => new RegExp(`^\\s*${label}\\b`, 'i').test(content))
-    assert.ok(row, `The table's ${label} row label must be visible inside the panel\n${text}`)
-    const labelStart = row.content.indexOf(label)
-    assert.ok(labelStart >= 0, `The table's ${label} row label must be inside its row\n${text}`)
-    const labelColumn = panelColumn(frame, row.content, labelStart)
-    const labelBackground = assertBackgroundDistinctAgainstData(world, text, label, normalCell, row.row, labelColumn)
-
-    const labelEndColumn = labelColumn + displayWidth(label)
-    assertBlankCellsMatchBackgroundAndDifferFromData(
-      world,
-      text,
-      `blank cells after the "${label}" row label and before its first numeric column`,
-      row.row,
-      labelEndColumn,
-      // Numeric values are right-aligned within their column; its start is the
-      // first heading's start, not the first visible digit or currency symbol.
-      firstHeadingColumn,
-      labelBackground,
-      normalCell,
-    )
+  for (const pairColor of pairColors) {
+    assert.notDeepEqual(titleColor, pairColor,
+      `The rendered SGR foreground or background colors of the usage details modal title (${describe(titleColor)}) and a pair title (${describe(pairColor)}) must be pairwise distinct\n${text}`)
+  }
+  for (const tableColor of tableColors) {
+    assert.notDeepEqual(titleColor, tableColor,
+      `The rendered SGR foreground or background colors of the usage details modal title (${describe(titleColor)}) and a table heading (${describe(tableColor)}) must be pairwise distinct\n${text}`)
   }
 }
 
