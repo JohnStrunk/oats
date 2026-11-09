@@ -17,7 +17,7 @@
     "tui.js"
   ],
   "dependencies": {
-    "@opencode/plugin": "2.2.1"
+    "@opencode/plugin": "2.2.4"
   },
   "peerDependencies": {
     "solid-js": ">=1.9.17 <2"
@@ -27,9 +27,9 @@
     "@cucumber/cucumber": "13.3.0",
     "@cucumber/gherkin": "42.0.1",
     "@cucumber/messages": "34.2.1",
-    "@opencode/client": "2.2.1",
-    "@opentui/core": "0.7.0",
-    "@opentui/solid": "0.7.0",
+    "@opencode/client": "2.2.4",
+    "@opentui/core": "0.8.0",
+    "@opentui/solid": "0.8.0",
     "fast-check": "4.10.2",
     "json5": "2.2.3",
     "markdownlint-cli2": "0.24.0",
