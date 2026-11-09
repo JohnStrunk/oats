@@ -29,13 +29,6 @@
       "separateMajorMinor": false
     },
     {
-      "description": "Cap @opentui updates to the 0.7.x line: no @opencode/plugin release accepts @opentui 0.8.x peers yet, so updates beyond 0.7.x fail with ERESOLVE; remove this rule when a @opencode/plugin release accepts @opentui 0.8.x peers",
-      "matchPackageNames": [
-        "@opentui/**"
-      ],
-      "allowedVersions": "0.7.x"
-    },
-    {
       "description": "Group Node.js version updates for .nvmrc and the GitHub Actions setup-node input into one branch, including major updates",
       "groupName": "Node.js",
       "matchManagers": [

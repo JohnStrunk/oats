@@ -1,11 +1,10 @@
-// Checks for the version-coupled OpenCode and OpenTUI Renovate rules.
+// Checks for the OpenCode and OpenTUI Renovate grouping rule.
 //
-// `@opencode/plugin` pins exact optional OpenTUI peers and `@opentui/solid`
+// `@opencode/plugin` declares optional OpenTUI peers and `@opentui/solid`
 // depends on the same `@opentui/core` version, so the @opencode and @opentui
 // packages form one version-coupled family: their updates must be proposed
-// together, and OpenTUI updates must stay on a peer-compatible line. These
-// checks inspect the local Renovate configuration only; they are not a
-// Renovate simulator.
+// together. These checks inspect the local Renovate configuration only;
+// they are not a Renovate simulator.
 
 import assert from 'node:assert/strict'
 import fc from 'fast-check'
@@ -23,8 +22,6 @@ export const STACK_PACKAGE_NAMES = [
   '@opentui/core',
   '@opentui/solid',
 ]
-const OPENCODE_PACKAGES = STACK_PACKAGE_NAMES.filter(name => name.startsWith('@opencode/'))
-const OPENTUI_PACKAGES = STACK_PACKAGE_NAMES.filter(name => name.startsWith('@opentui/'))
 
 // A literal `@scope/**` pattern matches exactly the package names inside
 // that npm scope: it requires the scope prefix followed by a slash, so it
@@ -140,48 +137,5 @@ export function checkStackGroupNoMajorMinorSplit(config) {
     if (!STACK_PACKAGE_NAMES.some(name => ruleMayMatchStackPackage(candidate, name))) continue
     assert.ok(candidate.separateMajorMinor === undefined || candidate.separateMajorMinor === false,
       'A later local package rule may override the stack grouping split setting')
-  }
-}
-
-export function findOpentuiCapRule(config) {
-  return (config.packageRules ?? []).find(candidate =>
-    Array.isArray(candidate?.matchPackageNames) &&
-    candidate.matchPackageNames.includes(OPENTUI_PATTERN) &&
-    candidate.allowedVersions !== undefined)
-}
-
-// This verifies only the configured cap. Whether upstream @opentui releases
-// exist, or whether the pinned plugin line accepts other OpenTUI peers,
-// cannot be established from the local configuration.
-export function checkOpentuiVersionCap(config) {
-  const rules = config.packageRules ?? []
-  const rule = findOpentuiCapRule(config)
-  assert.ok(rule, 'Expected a package rule capping @opentui updates')
-  assert.equal(rule.allowedVersions, '0.7.x',
-    'The OpenTUI cap must allow only the 0.7.x line')
-
-  const supported = new Set(['matchPackageNames'])
-  for (const key of Object.keys(rule)) {
-    if (key.startsWith('match')) assert.ok(supported.has(key), `Unverified cap matcher: ${key}`)
-  }
-  assert.deepEqual(rule.matchPackageNames, [OPENTUI_PATTERN],
-    'The cap must select exactly the @opentui scoped pattern')
-
-  const capMatches = name => rule.matchPackageNames.some(pattern => scopedPatternMatches(pattern, name))
-  for (const name of OPENTUI_PACKAGES) {
-    assert.ok(capMatches(name), `The ${name} dependency must be capped`)
-  }
-  for (const name of OPENCODE_PACKAGES) {
-    assert.ok(!capMatches(name), `The cap must not restrict the OpenCode package ${name}`)
-  }
-  fc.assert(fc.property(fc.string(), name =>
-    assert.equal(capMatches(name), name.startsWith('@opentui/'))))
-
-  // A second local rule carrying allowedVersions that may match an OpenTUI
-  // package could override or contradict the cap; reject it conservatively.
-  for (const candidate of rules) {
-    if (candidate === rule || !Object.hasOwn(candidate, 'allowedVersions')) continue
-    assert.ok(!OPENTUI_PACKAGES.some(name => ruleMayMatchStackPackage(candidate, name)),
-      'Another local package rule may override the OpenTUI version cap')
   }
 }
