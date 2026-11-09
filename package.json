@@ -25,6 +25,9 @@
   "devDependencies": {
     "@actions/expressions": "0.3.61",
     "@cucumber/cucumber": "13.3.0",
+    "@cucumber/gherkin": "42.0.1",
+    "@cucumber/messages": "34.2.1",
+    "@opencode/client": "2.2.1",
     "@opentui/core": "0.7.0",
     "@opentui/solid": "0.7.0",
     "fast-check": "4.10.2",
