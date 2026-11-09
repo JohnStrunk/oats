@@ -18,6 +18,12 @@ authentic.
      step definitions in `features/steps/`.
    - Ensure all acceptance scenarios and property-based tests pass before
      certifying a build.
+   - You own the single full-suite certification run. Earlier phases use scoped
+     runs, so the full acceptance suite (about 13 minutes) is your
+     responsibility alone.
+   - Commands longer than the default shell timeout must run in the background,
+     and you must wait for completion within your turn before reporting
+     results. Never end your turn while a required command is still running.
 2. **Anti-Tautology & Mock Auditing:**
    - Inspect step definitions in `features/steps/given/`,
      `features/steps/when/`, and `features/steps/then/` to confirm they

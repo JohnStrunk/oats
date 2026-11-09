@@ -44,3 +44,15 @@ to satisfy the feature specifications in `features/`.
      criteria in `features/` to force a test to pass.
    - If a specification is ambiguous or impossible to implement cleanly,
      coordinate with the `qa-spec` agent to refine the requirements.
+5. **Verify the Green Phase Efficiently:**
+   - Run the new or changed feature files, then the affected component tag,
+     for example
+     `npm run test:features -- --tags '@component:repo-infrastructure'`. The
+     `verifier` agent owns the single full-suite certification run. Do not
+     repeat the full suite during the Green phase.
+   - Commands longer than the default shell timeout (the full acceptance suite
+     takes about 13 minutes) must run in the background, and you must wait for
+     completion within your turn before reporting results. Never end your turn
+     while a required command is still running.
+   - Report the implementation diff before you start long verification runs, so
+     a resumed turn never repeats implementation work.

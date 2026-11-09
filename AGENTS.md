@@ -106,6 +106,18 @@ both Antigravity and OpenCode v2:
 
 ### Development workflow
 
+Test runs are scoped to the development phase. The full acceptance suite takes
+about 13 minutes. In the Red and Green phases, agents run only the new or
+changed feature files, or filter by component tag, for example
+`npm run test:features -- --tags '@component:repo-infrastructure'`. The
+`verifier` agent owns the single full-suite certification run. Earlier phases
+must not repeat the full suite.
+
+Commands longer than the default shell timeout, such as the full acceptance
+suite, must run in the background. The agent must wait for completion within
+its own turn before it reports results. An agent must not end its turn while a
+required command is still running.
+
 1. **Elicit requirements:** When adding a feature, fixing a bug, or modifying
    behavior, the `qa-spec` agent uses the `eliciting-requirements` skill
    interactively with the user to construct EARS rules.

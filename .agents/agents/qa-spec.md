@@ -52,3 +52,14 @@ verification harnesses before code implementation begins.
      boundaries, never internal mock shortcuts.
    - Verify that new scenarios fail initially (Red phase) until the Developer
      Agent implements the behavior.
+5. **Verify the Red Phase Efficiently:**
+   - Prove the Red phase by running only the new or changed feature files, for
+     example `npx cucumber-js features/repo-infrastructure/<file>.feature`. A
+     full-suite run is not required at this phase. Until implementation begins,
+     no tracked file has changed, so existing scenarios cannot regress.
+     Step-name collisions surface in the targeted run and in the unit-suite
+     migration contract tests.
+   - Commands longer than the default shell timeout (the full acceptance suite
+     takes about 13 minutes) must run in the background, and you must wait for
+     completion within your turn before reporting results. Never end your turn
+     while a required command is still running.
