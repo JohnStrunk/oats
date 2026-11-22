@@ -26,7 +26,7 @@
     "@actions/expressions": "0.3.61",
     "@cucumber/cucumber": "13.3.0",
     "@cucumber/gherkin": "42.0.1",
-    "@cucumber/messages": "34.2.1",
+    "@cucumber/messages": "35.0.0",
     "@opencode/client": "2.2.7",
     "@opentui/core": "0.8.4",
     "@opentui/solid": "0.8.4",
