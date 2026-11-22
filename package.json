@@ -32,7 +32,7 @@
     "@opentui/solid": "0.8.4",
     "fast-check": "4.10.2",
     "json5": "2.2.3",
-    "markdownlint-cli2": "0.24.0",
+    "markdownlint-cli2": "0.24.1",
     "node-pty": "1.1.0",
     "solid-js": "1.9.19",
     "yaml": "2.9.1"
